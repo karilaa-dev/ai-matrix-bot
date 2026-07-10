@@ -1,0 +1,57 @@
+services:
+  bot:
+    build:
+      context: .
+      args:
+        CODEX_RELEASE: "0.144.0"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      MATRIX_DATABASE_PATH: /app/data/matrix-bot.sqlite
+      CORE_DATABASE_URL: file:/app/data/codex-core.sqlite
+      FILE_ROOT: /app/data/files
+      BASH_ROOT: /app/data/bash
+      MATRIX_STORAGE_PATH: /app/state/matrix/sync
+      MATRIX_CRYPTO_PATH: /app/state/matrix/crypto
+      MATRIX_ACCESS_TOKEN_FILE: /run/secrets/matrix_access_token
+      MATRIX_RECOVERY_KEY_FILE: /run/secrets/matrix_recovery_key
+      CODEX_HOME: /home/node/.codex
+      CODEX_PATH: /usr/local/bin/codex
+      DOCLING_URL: http://docling:5001
+    secrets:
+      - matrix_access_token
+      - matrix_recovery_key
+    volumes:
+      - bot-data:/app/data
+      - matrix-state:/app/state/matrix
+      - codex-home:/home/node/.codex
+    depends_on:
+      docling:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "npm", "run", "health", "--silent"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  docling:
+    image: quay.io/docling-project/docling-serve
+    volumes:
+      - docling-cache:/opt/app-root/src/.cache
+    restart: unless-stopped
+
+secrets:
+  matrix_access_token:
+    file: ./secrets/matrix_access_token
+  matrix_recovery_key:
+    file: ./secrets/matrix_recovery_key
+
+volumes:
+  bot-data:
+  matrix-state:
+  codex-home:
+  docling-cache:
