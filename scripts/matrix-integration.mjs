@@ -595,6 +595,13 @@ async function main() {
     // asynchronously after the homeserver socket closes. Give the Rust crypto
     // runtime time to release its Tokio work before Node tears down N-API.
     await sleep(3_000);
+    // Synapse writes its bind-mounted database as a container UID. Remove that
+    // subdirectory as root in a one-shot container so Linux CI can then remove
+    // the caller-owned temporary directory without an EACCES cleanup failure.
+    await execFile("docker", [
+      "run", "--rm", "--user", "0:0", "-v", `${temporary}:/cleanup`,
+      "--entrypoint", "/bin/rm", image, "-rf", "/cleanup/synapse",
+    ]).catch(() => undefined);
     await rm(temporary, { recursive: true, force: true });
   }
 }
