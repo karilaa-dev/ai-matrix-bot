@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Container version="2">
+  <Name>ai-matrix-bot</Name>
+  <Repository>ghcr.io/karilaa-dev/ai-matrix-bot:latest</Repository>
+  <Registry>https://github.com/karilaa-dev/ai-matrix-bot/pkgs/container/ai-matrix-bot</Registry>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/karilaa-dev/ai-matrix-bot/issues</Support>
+  <Project>https://github.com/karilaa-dev/ai-matrix-bot</Project>
+  <Overview>Private Matrix assistant powered by Codex, with encrypted DMs, threads, persistent memory, files, web tools, image generation, and per-conversation shell workspaces.</Overview>
+  <Category>Tools:Utilities</Category>
+  <WebUI/>
+  <TemplateURL>https://raw.githubusercontent.com/karilaa-dev/ai-matrix-bot/main/templates/ai-matrix-bot.xml</TemplateURL>
+  <ReadMe>https://raw.githubusercontent.com/karilaa-dev/ai-matrix-bot/main/README.md</ReadMe>
+  <ExtraParams>--user=99:100</ExtraParams>
+  <Requires>A dedicated Matrix bot account and access token, a recovery key, OpenRouter and Tavily API keys, and a reachable Docling server.</Requires>
+
+  <Config Name="Appdata" Target="/app/data" Default="/mnt/user/appdata/ai-matrix-bot" Mode="rw" Description="Persistent Matrix sync and crypto state, SQLite databases, Codex authentication/configuration, home directory, and cache state." Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="User Files" Target="/app/data/files" Default="/mnt/user/ai-matrix-bot" Mode="rw" Description="Persistent Matrix uploads, generated files, and per-conversation shell workspaces." Type="Path" Display="always" Required="true" Mask="false"/>
+
+  <Config Name="Matrix Homeserver URL" Target="MATRIX_HOMESERVER_URL" Default="https://matrix.example.org" Description="Matrix client API base URL." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Matrix Bot User ID" Target="MATRIX_BOT_USER_ID" Default="@ai-bot:example.org" Description="Full MXID of the dedicated non-admin bot account." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Matrix Owner User ID" Target="MATRIX_OWNER_ID" Default="@owner:example.org" Description="Full MXID that owns and administers the allowlist." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Matrix Device ID" Target="MATRIX_DEVICE_ID" Default="AI_MATRIX_BOT" Description="Stable device ID associated with the access token and crypto store. Do not change it casually." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Matrix Access Token" Target="MATRIX_ACCESS_TOKEN" Default="" Description="Stable access token for the bot device." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Matrix Recovery Key" Target="MATRIX_RECOVERY_KEY" Default="" Description="Recovery key used to confirm the bot cryptographic identity. Preserve spaces exactly." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="OpenRouter API Key" Target="OPENROUTER_API_KEY" Default="" Description="OpenRouter API key used for embeddings and retrieval vectors." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Tavily API Key" Target="TAVILY_API_KEY" Default="" Description="Tavily API key used by web search and page extraction tools." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Docling URL" Target="DOCLING_URL" Default="http://192.168.1.206:5001" Description="Base URL of the separately managed Docling server. Use a reachable LAN endpoint or a container name on a shared custom network." Type="Variable" Display="always" Required="true" Mask="false"/>
+
+  <Config Name="Home Directory" Target="HOME" Default="/app/data/home" Description="Persistent home directory inside appdata." Type="Variable" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Matrix Adapter Database" Target="MATRIX_DATABASE_PATH" Default="/app/data/matrix-bot.sqlite" Description="SQLite database for allowlisting, Matrix mappings, inbox, and delivery state." Type="Variable" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Core Database URL" Target="CORE_DATABASE_URL" Default="file:/app/data/codex-core.sqlite" Description="SQLite database URL for Codex conversations, memory, files, and embeddings." Type="Variable" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Matrix Sync State" Target="MATRIX_STORAGE_PATH" Default="/app/data/matrix/sync" Description="Persistent Matrix sync state path." Type="Variable" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Matrix Crypto State" Target="MATRIX_CRYPTO_PATH" Default="/app/data/matrix/crypto" Description="Persistent Matrix E2EE device and room-key store. Never share it between running containers." Type="Variable" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Codex Home" Target="CODEX_HOME" Default="/app/data/codex" Description="Persistent Codex authentication and configuration directory." Type="Variable" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="File Root" Target="FILE_ROOT" Default="/app/data/files" Description="Persistent incoming and generated file storage." Type="Variable" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Bash Workspace Root" Target="BASH_ROOT" Default="/app/data/files/bash" Description="Persistent per-conversation virtual shell workspaces." Type="Variable" Display="advanced" Required="true" Mask="false"/>
+
+  <Config Name="Global Concurrency" Target="MATRIX_GLOBAL_CONCURRENCY" Default="4" Description="Maximum number of conversations running concurrently." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Batch Window" Target="MATRIX_BATCH_WINDOW_MS" Default="750" Description="Milliseconds used to durably batch adjacent text and media." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Maximum Event Bytes" Target="MATRIX_MAX_EVENT_BYTES" Default="60000" Description="Maximum Matrix event size before Markdown output is split." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Codex Model" Target="CODEX_MODEL" Default="gpt-5.6-sol" Description="Codex app-server model for normal chat turns." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Codex Compaction Model" Target="CODEX_COMPACTION_MODEL" Default="gpt-5.6-luna" Description="Codex model for memory compaction and image descriptions." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Codex Image Model" Target="CODEX_IMAGE_MODEL" Default="gpt-image-2" Description="Codex image-generation model." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Codex Image Quality" Target="CODEX_IMAGE_QUALITY" Default="low" Description="Default image-generation quality: low, medium, high, or auto." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Codex Speed Mode" Target="CODEX_SPEED_MODE" Default="fast" Description="Codex service tier mode: standard or fast." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Codex Verbosity" Target="CODEX_VERBOSITY" Default="high" Description="Codex model output verbosity: low, medium, or high." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Codex Turn Timeout" Target="CODEX_TURN_TIMEOUT_MS" Default="900000" Description="Maximum milliseconds for one Codex turn. Set to 0 to disable the hard cap." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Codex Image Timeout" Target="CODEX_IMAGE_TIMEOUT_MS" Default="300000" Description="Maximum milliseconds for an image-generation turn." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Reasoning Effort" Target="REASONING_EFFORT" Default="medium" Description="Reasoning effort for normal chat turns." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Reasoning Summary" Target="REASONING_SUMMARY" Default="detailed" Description="Reasoning summary verbosity." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="OpenRouter Embedding Model" Target="OPENROUTER_EMBEDDING_MODEL" Default="perplexity/pplx-embed-v1-0.6b" Description="OpenRouter embedding model for retrieval vectors." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Context Warning Ratio" Target="CONTEXT_WARN_RATIO" Default="0.85" Description="Usable context fraction that triggers context-limit handling." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Docling Timeout" Target="DOCLING_TIMEOUT_MS" Default="300000" Description="Docling conversion timeout in milliseconds." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Bash Timeout" Target="BASH_TIMEOUT_MS" Default="30000" Description="Maximum milliseconds for one virtual shell execution." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Bash Maximum Output" Target="BASH_MAX_OUTPUT_CHARS" Default="12000" Description="Maximum characters returned for each shell stdout or stderr stream." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Recent Window Messages" Target="RECENT_WINDOW_MESSAGES" Default="20" Description="Newest messages preserved verbatim when compacting a conversation." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Log Level" Target="LOG_LEVEL" Default="info" Description="Minimum logger level: debug, info, warn, or error." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

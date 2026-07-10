@@ -6,12 +6,14 @@
 npm ci
 npm run check
 npm test
+npm run test:deployment
 npm run build
 docker build -t ai-matrix-bot:test .
 ```
 
-CI also validates the base and Postgres Compose models. Unit tests must not use
-a real Matrix token, provider key, network, or the operator's Codex home.
+CI also asserts that the base Compose model contains only the bot service and
+validates both the base and Postgres Compose models. Unit tests must not use a
+real Matrix token, provider key, network, or the operator's Codex home.
 
 High-value deterministic coverage includes:
 

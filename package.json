@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:deployment": "python3 scripts/validate_unraid_template.py",
     "test:integration:matrix": "npm run build && node scripts/matrix-integration.mjs",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",

@@ -57,7 +57,7 @@ before inference, and generated relations are reapplied during delivery.
 ## v0.1.0 acceptance gates
 
 - Node 24 typecheck, unit/integration tests, production build, image build, and
-  both Compose models pass in CI.
+  the single-container and Postgres Compose models pass in CI.
 - A clean install resolves the public `codex-core` v0.1.0 Git tag, not a local
   path, and the lockfile pins its commit.
 - Encrypted and unencrypted DMs survive a restart without duplicate inference
@@ -67,7 +67,8 @@ before inference, and generated relations are reapplied during delivery.
   have deterministic tests.
 - A disposable homeserver run covers two client accounts and encrypted media;
   a final live smoke uses the owner's server and dedicated bot account.
-- The four persistent state groups are backed up and restored together, and the
+- The application, Matrix, and Codex persistent state groups are backed up and
+  restored together, and the
   bot resumes decryption, sync, history, files, bash state, and Codex auth.
 - The tagged core package includes a compiling `ai-tg-bot` legacy-persistence
   adapter and migration guide checked against revision `7eedd5f`.

@@ -22,6 +22,7 @@ import {
 } from "@karilaa-dev/codex-core/providers";
 import type { AppConfig } from "../config.js";
 import type { Logger } from "../logging.js";
+import { createCodexChildEnvironment } from "./environment.js";
 
 class LocalBlobStore implements BlobStore {
   readonly #root: string;
@@ -67,14 +68,15 @@ function persistenceFor(databaseUrl: string) {
 export class CoreService {
   readonly #core: CodexCore;
   readonly #blobStore: LocalBlobStore;
+  readonly #recentWindowMessages: number;
 
   constructor(config: AppConfig["core"], logger: Logger) {
     const persistence = persistenceFor(config.databaseUrl);
     this.#blobStore = new LocalBlobStore(config.fileRoot);
-    const environment = config.codexHome ? { ...process.env, CODEX_HOME: config.codexHome } : undefined;
+    this.#recentWindowMessages = config.recentWindowMessages;
     const appServer = new CodexAppServerClient({
       binary: config.codexPath,
-      ...(environment ? { environment } : {}),
+      environment: createCodexChildEnvironment(process.env, config.codexHome),
       clientName: "ai-matrix-bot",
       clientTitle: "AI Matrix Bot",
       logger,
@@ -92,6 +94,12 @@ export class CoreService {
     });
     const providers: CoreProviders = {
       ...helperProviders,
+      images: {
+        generate: (input) => helperProviders.images.generate({
+          ...input,
+          quality: input.quality ?? config.codexImageQuality,
+        }),
+      },
       shell: createPersistentShellProvider({
         root: config.bashRoot,
         timeoutMs: config.bashTimeoutMs,
@@ -146,7 +154,10 @@ export class CoreService {
   }
 
   compactConversation(conversationId: string): ReturnType<CodexCore["compactConversation"]> {
-    return this.#core.compactConversation({ conversationId });
+    return this.#core.compactConversation({
+      conversationId,
+      recentMessages: this.#recentWindowMessages,
+    });
   }
 
   ingestAttachment(input: {

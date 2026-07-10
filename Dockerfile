@@ -38,11 +38,8 @@ ENV NODE_ENV=production \
     BASH_ROOT=/app/data/bash \
     MATRIX_STORAGE_PATH=/app/state/matrix/sync \
     MATRIX_CRYPTO_PATH=/app/state/matrix/crypto \
-    MATRIX_ACCESS_TOKEN_FILE=/run/secrets/matrix_access_token \
-    MATRIX_RECOVERY_KEY_FILE=/run/secrets/matrix_recovery_key \
     CODEX_HOME=/home/node/.codex \
-    CODEX_PATH=/usr/local/bin/codex \
-    DOCLING_URL=http://docling:5001
+    CODEX_PATH=/usr/local/bin/codex
 
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
@@ -53,6 +50,9 @@ RUN mkdir -p /app/data/files /app/data/bash /app/state/matrix /home/node/.codex 
     && chown -R node:node /app /home/node/.codex
 
 USER node
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD npm run health --silent || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["npm", "start"]

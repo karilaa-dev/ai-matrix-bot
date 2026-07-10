@@ -5,6 +5,7 @@ dist/
 !.env.example
 data/
 secrets/
+.matrix-bootstrap/
 *.log
 *.db
 *.db-shm

@@ -100,7 +100,9 @@ async function main(): Promise<void> {
 
   const recoveryPath = argument("--recovery-key-out") ?? process.env.MATRIX_RECOVERY_KEY_FILE;
   if (!config.matrix.recoveryKey && !recoveryPath) {
-    throw new Error("Set MATRIX_RECOVERY_KEY_FILE or pass --recovery-key-out before initializing Matrix recovery");
+    throw new Error(
+      "Set MATRIX_RECOVERY_KEY, MATRIX_RECOVERY_KEY_FILE, or pass --recovery-key-out before initializing Matrix recovery",
+    );
   }
   if (!config.matrix.recoveryKey && recoveryPath) {
     requireWritableSecretOutput(recoveryPath, "Matrix recovery key", "--recovery-key-out");

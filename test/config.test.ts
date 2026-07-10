@@ -29,6 +29,7 @@ beforeEach(() => {
       name === "TAVILY_API_KEY" ||
       name === "REASONING_EFFORT" ||
       name === "REASONING_SUMMARY" ||
+      name === "RECENT_WINDOW_MESSAGES" ||
       name === "CONTEXT_WARN_RATIO" ||
       name === "SYSTEM_PROMPT_PATH" ||
       name === "LOG_LEVEL"
@@ -67,9 +68,11 @@ describe("loadConfig", () => {
       codexModel: "gpt-5.6-sol",
       codexCompactionModel: "gpt-5.6-luna",
       codexImageModel: "gpt-image-2",
+      codexImageQuality: "low",
       codexSpeedMode: "fast",
       openRouterEmbeddingModel: "perplexity/pplx-embed-v1-0.6b",
       contextWarningRatio: 0.85,
+      recentWindowMessages: 20,
     });
     expect(config.logLevel).toBe("info");
   });
@@ -93,15 +96,63 @@ describe("loadConfig", () => {
     expect(JSON.stringify(config)).not.toContain("password");
   });
 
-  it("prefers an explicitly supplied token over a token file", () => {
+  it("prefers explicitly supplied Matrix secrets over secret files", () => {
     const directory = mkdtempSync(join(tmpdir(), "matrix-config-"));
     temporaryDirectories.push(directory);
     const accessTokenPath = join(directory, "access-token");
+    const recoveryKeyPath = join(directory, "recovery-key");
     writeFileSync(accessTokenPath, "stale-file-token");
+    writeFileSync(recoveryKeyPath, "stale-file-recovery-key");
     requiredEnvironment();
+    process.env.MATRIX_RECOVERY_KEY = "direct-recovery-key";
     process.env.MATRIX_ACCESS_TOKEN_FILE = accessTokenPath;
+    process.env.MATRIX_RECOVERY_KEY_FILE = recoveryKeyPath;
 
-    expect(loadConfig().matrix.accessToken).toBe("test-access-token");
+    expect(loadConfig().matrix).toMatchObject({
+      accessToken: "test-access-token",
+      recoveryKey: "direct-recovery-key",
+    });
+  });
+
+  it("falls back to files when direct Matrix secret values are empty", () => {
+    const directory = mkdtempSync(join(tmpdir(), "matrix-config-"));
+    temporaryDirectories.push(directory);
+    const accessTokenPath = join(directory, "access-token");
+    const recoveryKeyPath = join(directory, "recovery-key");
+    writeFileSync(accessTokenPath, "file-access-token\n");
+    writeFileSync(recoveryKeyPath, "file-recovery-key\n");
+    process.env.MATRIX_HOMESERVER_URL = "https://matrix.example.org";
+    process.env.MATRIX_OWNER_ID = "@owner:example.org";
+    process.env.MATRIX_ACCESS_TOKEN = "   ";
+    process.env.MATRIX_RECOVERY_KEY = "";
+    process.env.MATRIX_ACCESS_TOKEN_FILE = accessTokenPath;
+    process.env.MATRIX_RECOVERY_KEY_FILE = recoveryKeyPath;
+
+    expect(loadConfig().matrix).toMatchObject({
+      accessToken: "file-access-token",
+      recoveryKey: "file-recovery-key",
+    });
+  });
+
+  it("uses direct Matrix secrets when container-default secret files are absent", () => {
+    const directory = mkdtempSync(join(tmpdir(), "matrix-config-"));
+    temporaryDirectories.push(directory);
+    requiredEnvironment();
+    process.env.MATRIX_RECOVERY_KEY = "direct-recovery-key";
+    process.env.MATRIX_ACCESS_TOKEN_FILE = join(directory, "missing-access-token");
+    process.env.MATRIX_RECOVERY_KEY_FILE = join(directory, "missing-recovery-key");
+
+    expect(loadConfig().matrix).toMatchObject({
+      accessToken: "test-access-token",
+      recoveryKey: "direct-recovery-key",
+    });
+  });
+
+  it("accepts an external Docling endpoint for a single-container deployment", () => {
+    requiredEnvironment();
+    process.env.DOCLING_URL = "https://docling.example.org/api/";
+
+    expect(loadConfig().core.doclingUrl).toBe("https://docling.example.org/api/");
   });
 
   it("allows bootstrap to load configuration before it has an access token", () => {
@@ -138,6 +189,16 @@ describe("loadConfig", () => {
     process.env[name] = value;
 
     expect(() => loadConfig()).toThrow(`${name} must be an integer`);
+  });
+
+  it("validates shared image-quality and compaction settings", () => {
+    requiredEnvironment();
+    process.env.CODEX_IMAGE_QUALITY = "ultra";
+    expect(() => loadConfig()).toThrow("CODEX_IMAGE_QUALITY must be one of");
+
+    process.env.CODEX_IMAGE_QUALITY = "high";
+    process.env.RECENT_WINDOW_MESSAGES = "0";
+    expect(() => loadConfig()).toThrow("RECENT_WINDOW_MESSAGES must be an integer");
   });
 
   it("requires a fully-qualified Matrix owner ID", () => {

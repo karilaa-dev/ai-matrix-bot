@@ -28,6 +28,7 @@ export interface AppConfig {
     codexModel: string;
     codexCompactionModel: string;
     codexImageModel: string;
+    codexImageQuality: "low" | "medium" | "high" | "auto";
     codexSpeedMode: "standard" | "fast";
     codexVerbosity: "low" | "medium" | "high";
     reasoningEffort: string;
@@ -42,6 +43,7 @@ export interface AppConfig {
     contextWarningRatio: number;
     bashTimeoutMs: number;
     bashMaxOutputCharacters: number;
+    recentWindowMessages: number;
     systemPromptPath: string;
   };
   logLevel: LogLevelName;
@@ -134,6 +136,7 @@ export function loadConfig(options: { allowMissingAccessToken?: boolean; allowMi
       codexModel: optional("CODEX_MODEL") ?? "gpt-5.6-sol",
       codexCompactionModel: optional("CODEX_COMPACTION_MODEL") ?? "gpt-5.6-luna",
       codexImageModel: optional("CODEX_IMAGE_MODEL") ?? "gpt-image-2",
+      codexImageQuality: choice("CODEX_IMAGE_QUALITY", "low", ["low", "medium", "high", "auto"] as const),
       codexSpeedMode: choice("CODEX_SPEED_MODE", "fast", ["standard", "fast"] as const),
       codexVerbosity: choice("CODEX_VERBOSITY", "high", ["low", "medium", "high"] as const),
       reasoningEffort: optional("REASONING_EFFORT") ?? "medium",
@@ -145,6 +148,7 @@ export function loadConfig(options: { allowMissingAccessToken?: boolean; allowMi
       contextWarningRatio: ratio("CONTEXT_WARN_RATIO", 0.85),
       bashTimeoutMs: integer("BASH_TIMEOUT_MS", 30_000, 1_000, 300_000),
       bashMaxOutputCharacters: integer("BASH_MAX_OUTPUT_CHARS", 12_000, 1_000, 1_000_000),
+      recentWindowMessages: integer("RECENT_WINDOW_MESSAGES", 20, 1, 1_000),
       systemPromptPath: resolve(optional("SYSTEM_PROMPT_PATH") ?? "system_prompt.md"),
       ...(optional("CODEX_HOME") ? { codexHome: resolve(required("CODEX_HOME")) } : {}),
       ...(optional("DOCLING_URL") ? { doclingUrl: required("DOCLING_URL") } : {}),

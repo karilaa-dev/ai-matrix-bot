@@ -10,40 +10,66 @@ token, and choose one stable device ID for this deployment.
 Set:
 
 - `MATRIX_HOMESERVER_URL` to the client API base URL.
+- `MATRIX_BOT_USER_ID` to the dedicated bot's full MXID.
 - `MATRIX_OWNER_ID` to the full MXID that controls the allowlist.
 - `MATRIX_DEVICE_ID` to a stable value; changing it creates a new cryptographic
   device and requires a deliberate recovery/bootstrap operation.
-- `MATRIX_ACCESS_TOKEN_FILE` and `MATRIX_RECOVERY_KEY_FILE` to owner-only secret
-  files. Environment-token fallback is intended for bootstrap/development only.
+- `MATRIX_ACCESS_TOKEN` to the stable device token.
+- `MATRIX_RECOVERY_KEY` to the matching recovery key, quoted when stored in
+  `.env` because it contains spaces.
 
 Run `npm run matrix:bootstrap` (or the Docker command in the README). Bootstrap
 validates the token with `/whoami`, rejects an identity mismatch, initializes
 the durable SDK/crypto paths, and records the owner. It never stores an account
 password.
 
-To log in once instead of supplying a token, leave the access-token file absent,
-export the remaining configuration, and pass the password only on stdin. The
-token and newly created recovery key are written with owner-only permissions:
+Direct environment values are the supplied single-container path. The
+application still supports `MATRIX_ACCESS_TOKEN_FILE` and
+`MATRIX_RECOVERY_KEY_FILE` for custom orchestrators, but no second Compose
+deployment mode is maintained.
+
+## One-time password bootstrap
+
+If only the account password is available, leave `MATRIX_ACCESS_TOKEN` and (for
+a new recovery identity) `MATRIX_RECOVERY_KEY` empty, then pass the password on
+stdin. A child process cannot update the parent Compose environment, so write
+the generated credentials into a temporary owner-only handoff directory:
+
+This command is for the named-volume Compose deployment. Unraid must use the
+Unraid-specific command in the README so bootstrap and the final container share
+the same `/mnt/user/appdata/ai-matrix-bot` crypto store.
 
 ```sh
-mkdir -p secrets
-chmod 700 secrets
-read -s MATRIX_BOT_PASSWORD
-printf '%s' "$MATRIX_BOT_PASSWORD" | npm run matrix:bootstrap -- \
-  --user "$MATRIX_BOT_USER_ID" --password-stdin \
-  --token-out secrets/matrix_access_token \
-  --recovery-key-out secrets/matrix_recovery_key
+mkdir -p .matrix-bootstrap
+chmod 700 .matrix-bootstrap
+# On Linux, make the temporary bind writable by the image's node user:
+sudo chown 1000:1000 .matrix-bootstrap
+
+set -a
+. ./.env
+set +a
+read -rsp 'Matrix bot password: ' MATRIX_BOT_PASSWORD
+printf '\n'
+printf '%s' "$MATRIX_BOT_PASSWORD" | docker compose run --rm --no-deps -T \
+  -v "$PWD/.matrix-bootstrap:/bootstrap-output" \
+  bot npm run matrix:bootstrap -- \
+    --user "$MATRIX_BOT_USER_ID" --password-stdin \
+    --token-out /bootstrap-output/matrix_access_token \
+    --recovery-key-out /bootstrap-output/matrix_recovery_key
 unset MATRIX_BOT_PASSWORD
 ```
 
-If account recovery already exists, place its key in the configured recovery
-file before login; bootstrap validates it rather than creating a replacement.
+Copy the two exact values into the masked Unraid fields or into
+`MATRIX_ACCESS_TOKEN` and quoted `MATRIX_RECOVERY_KEY` entries in `.env`, then
+securely remove the temporary handoff directory. The output files are created
+with mode `0600`; do not print them into logs or shell history.
 
-Docker secrets are read-only. When bootstrap creates a new recovery identity,
-pass `--recovery-key-out` pointing at the temporary writable bind mount shown in
-the README, then move that generated owner-only file into
-`secrets/matrix_recovery_key` before starting the bot. Never point a newly
-generated recovery-key output at `/run/secrets/matrix_recovery_key`.
+If account recovery already exists, put its key in `MATRIX_RECOVERY_KEY` before
+login and omit `--recovery-key-out`; bootstrap validates it rather than creating
+a replacement. If the server reports existing recovery but the key is lost,
+reset recovery/cross-signing deliberately from a trusted Matrix client first.
+There is no bot CLI reset flag, and an account password cannot recover old
+Megolm room keys.
 
 ## E2EE trust and recovery
 
