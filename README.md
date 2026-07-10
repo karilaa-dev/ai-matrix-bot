@@ -1,210 +1,180 @@
 # ai-matrix-bot
 
 A private Matrix assistant that runs as a dedicated Matrix user and uses
-[`@karilaa-dev/codex-core`](https://github.com/karilaa-dev/codex-core) for Codex
-inference, tools, files, retrieval, memory, compaction, and persistent bash
-workspaces. It syncs through the Matrix client API; no application service,
-public listener, or admin access token is required.
+[`@karilaa-dev/codex-core`](https://github.com/karilaa-dev/codex-core) for
+Codex chat, tools, files, retrieval, memory, compaction, image generation, and
+persistent bash workspaces. It uses the normal Matrix client API, so it needs no
+appservice registration, webhook, public port, or admin token.
 
-## What it supports
+## Features
 
 - Encrypted and unencrypted one-to-one rooms.
-- A durable owner-managed allowlist. Unknown invitations are declined and a
-  room is left if it gains a third member.
-- One core conversation for the DM timeline and a separate conversation for
-  each native Matrix thread.
-- Streamed answer/reasoning updates through `m.replace`, with a final
-  authoritative replacement.
-- Files and images up to 20 MiB each, generated artifacts, Docling extraction,
-  Tavily search/extraction, retrieval, compaction, forks, and persistent bash.
-- English/Russian preferences, timezone selection, stream controls, SQLite by
-  default, and a separate Postgres deployment override for core persistence.
-- At-least-once-safe Matrix processing: inbound event IDs and core source keys
-  are deduplicated, while outbound sends use stable transaction IDs.
+- Owner-managed allowlisting and automatic group-room rejection.
+- A separate Codex conversation for the main DM and every Matrix thread.
+- Streaming through Matrix edits, plus deterministic retries and deduplication.
+- Files and images up to 20 MiB, generated artifacts, retrieval, forks,
+  compaction, Tavily tools, Docling extraction, and persistent bash.
+- SQLite by default and an optional Postgres override for core persistence.
 
-## Requirements
+## Minimal Docker Compose deployment
 
-- A dedicated, non-admin Matrix account, a stable access token, and preferably
-  its recovery key.
-- Node.js 24 for a local install, or Docker with Compose.
-- A Codex login in the same `CODEX_HOME` the bot will use.
-- A separately managed Docling server reachable from the bot container.
-- OpenRouter credentials for embeddings and Tavily credentials for web tools
-  when those features are enabled.
+Set the homeserver, owner, encryption secret, and one authentication mode:
 
-The package consumes the public, tagged core library. Production lockfiles must
-resolve `github:karilaa-dev/codex-core#v0.1.0`; do not deploy a mutable branch or
-a developer `file:` dependency.
-
-## Docker quick start
-
-The default stack is deliberately one bot container, like the `ai-tg-bot`
-single-container deployment. Docling is external and selected with
-`DOCLING_URL`; there is no bundled Docling, public port, webhook, or appservice.
-
-1. Copy [`.env.example`](./.env.example) to `.env`, restrict it, and fill in the
-   Matrix identity, direct token/recovery values, provider keys, and external
-   Docling URL:
-
-   ```sh
-   cp .env.example .env
-   chmod 600 .env
-   ```
-
-   At minimum, replace:
-
-   ```dotenv
-   MATRIX_HOMESERVER_URL=https://matrix.example.org
-   MATRIX_BOT_USER_ID=@ai-bot:example.org
-   MATRIX_OWNER_ID=@owner:example.org
-   MATRIX_DEVICE_ID=AI_MATRIX_BOT
-   MATRIX_ACCESS_TOKEN=replace-me
-   MATRIX_RECOVERY_KEY="replace me exactly"
-   OPENROUTER_API_KEY=replace-me
-   TAVILY_API_KEY=replace-me
-   DOCLING_URL=http://192.168.1.10:5001
-   ```
-
-   Do not put the Matrix account password in `.env`. Quote the recovery key
-   because it contains spaces.
-
-2. Pull the published image, or build the same image from the checkout:
-
-   ```sh
-   docker compose pull bot
-   # Alternatively: docker compose build bot
-   ```
-
-3. Validate the stable device and recovery identity once:
-
-   ```sh
-   docker compose run --rm --no-deps bot npm run matrix:bootstrap
-   ```
-
-   This direct-config flow does not create secret handoff files. If you only
-   have the Matrix password or the account has no recovery identity yet, use
-   the one-time credential flow in [Matrix setup](./docs/matrix-setup.md).
-
-4. Authenticate Codex into its persistent Docker volume:
-
-   ```sh
-   docker compose run --rm bot codex login --device-auth
-   ```
-
-5. Start the one-container stack:
-
-   ```sh
-   docker compose up -d
-   docker compose ps
-   docker compose logs -f bot
-   ```
-
-The base stack exposes no host ports. It persists application data/files/bash
-workspaces, Matrix sync and crypto state, and Codex authentication in named
-volumes. The external Docling server owns its own model/cache state.
-
-For Postgres-backed core persistence, use the explicit override with a
-URL-safe password:
-
-```sh
-export POSTGRES_PASSWORD='replace-with-a-url-safe-secret'
-docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
-```
-
-The Matrix adapter database remains local so sync and delivery state can be
-recovered together with the crypto store. See [Deployment](./docs/deployment.md)
-before backing up, restoring, or changing device credentials.
-
-## Unraid single-container setup
-
-The repository publishes `ghcr.io/karilaa-dev/ai-matrix-bot:latest` for
-`linux/amd64` and `linux/arm64`, plus immutable full-commit SHA tags. Its Unraid
-template mirrors the existing `ai-tg-bot` deployment: bridge networking, no
-published ports, external Docling, direct masked configuration variables, and
-two persistent mounts.
-
-After the first publish workflow completes, set the GHCR package to public and
-verify an unauthenticated `docker pull` before installing the template.
-
-1. Prepare the final persistent paths. The one-time Matrix bootstrap must use
-   this same appdata path so its device crypto store is not replaced later:
-
-```sh
-mkdir -p \
-  /mnt/user/appdata/ai-matrix-bot/bootstrap-output \
-  /mnt/user/appdata/ai-matrix-bot/home \
-  /mnt/user/ai-matrix-bot
-chown -R 99:100 /mnt/user/appdata/ai-matrix-bot /mnt/user/ai-matrix-bot
-chmod -R u+rwX,g+rwX /mnt/user/appdata/ai-matrix-bot /mnt/user/ai-matrix-bot
-```
-
-2. If you only have the bot password, create the stable token, recovery key,
-   and crypto identity directly in the final appdata mount. Replace the three
-   public identity values; the password is read without echo and never stored:
-
-```sh
+```dotenv
 MATRIX_HOMESERVER_URL=https://matrix.example.org
-MATRIX_BOT_USER_ID=@ai-bot:example.org
 MATRIX_OWNER_ID=@owner:example.org
-MATRIX_DEVICE_ID=AI_MATRIX_BOT
+MATRIX_ENCRYPTION_SECRET=replace-with-output-of-openssl-command-below
 
-read -rsp 'Matrix bot password: ' MATRIX_BOT_PASSWORD
-printf '\n'
-printf '%s' "$MATRIX_BOT_PASSWORD" | docker run --rm -i \
-  --user 99:100 \
-  -v /mnt/user/appdata/ai-matrix-bot:/app/data \
-  -e HOME=/app/data/home \
-  -e MATRIX_HOMESERVER_URL="$MATRIX_HOMESERVER_URL" \
-  -e MATRIX_BOT_USER_ID="$MATRIX_BOT_USER_ID" \
-  -e MATRIX_OWNER_ID="$MATRIX_OWNER_ID" \
-  -e MATRIX_DEVICE_ID="$MATRIX_DEVICE_ID" \
-  -e MATRIX_DATABASE_PATH=/app/data/matrix-bot.sqlite \
-  -e MATRIX_STORAGE_PATH=/app/data/matrix/sync \
-  -e MATRIX_CRYPTO_PATH=/app/data/matrix/crypto \
-  ghcr.io/karilaa-dev/ai-matrix-bot:latest \
-  npm run matrix:bootstrap -- \
-    --user "$MATRIX_BOT_USER_ID" --password-stdin \
-    --token-out /app/data/bootstrap-output/matrix_access_token \
-    --recovery-key-out /app/data/bootstrap-output/matrix_recovery_key
-unset MATRIX_BOT_PASSWORD
+# Authentication mode 1: existing token
+MATRIX_ACCESS_TOKEN=replace-me
 ```
 
-   If the account already has recovery configured, add
-   `-e MATRIX_RECOVERY_KEY="$MATRIX_RECOVERY_KEY"` to `docker run` and omit
-   `--recovery-key-out`. If the existing key is lost, deliberately reset the bot
-   account's recovery first; old room keys may remain unrecoverable.
+Token mode is the smallest deployment: four values total. If you do not have a
+token, replace `MATRIX_ACCESS_TOKEN` with login mode:
 
-3. Install the template, refresh the Docker page, and select
-   **ai-matrix-bot** in **Add Container**:
+```dotenv
+MATRIX_LOGIN=@ai-bot:example.org
+MATRIX_PASSWORD=replace-me
+```
+
+A full bot MXID is recommended for `MATRIX_LOGIN`; its localpart is also
+accepted. The bot logs in once and caches the resulting access token and device
+in `/app/data/matrix/session.json`. The password remains an environment value
+and is never written into appdata. After the first successful start, the login
+and password may be cleared; the owner-only cached session is sufficient for
+later starts. Provide them again if the cached token is revoked. On a fresh
+deployment, configure exactly one authentication mode.
+
+Choose a unique `MATRIX_ENCRYPTION_SECRET` of at least 32 characters and
+preserve it exactly. `openssl rand -hex 32` can generate one. On first start
+the bot uses it to establish Matrix secret storage; on later starts or a new
+host it confirms the same account identity. A wrong value fails safely instead
+of resetting recovery.
+
+Start the bot:
 
 ```sh
-mkdir -p /boot/config/plugins/dockerMan/templates-user
-wget -O /boot/config/plugins/dockerMan/templates-user/my-ai-matrix-bot.xml \
-  https://raw.githubusercontent.com/karilaa-dev/ai-matrix-bot/main/templates/ai-matrix-bot.xml
+cp .env.example .env
+chmod 600 .env
+# Edit the common values and one authentication mode in .env.
+
+docker compose pull bot
+docker compose run --rm bot codex login --device-auth
+docker compose up -d
+docker compose logs -f bot
 ```
 
-   Copy the generated token and recovery key into their masked template fields,
-   fill in OpenRouter/Tavily keys and `DOCLING_URL`, and then remove the two
-   temporary credential-output files. Keep these mounts:
-
-| Host path | Container path | Contents |
-| --- | --- | --- |
-| `/mnt/user/appdata/ai-matrix-bot` | `/app/data` | SQLite, Matrix sync/crypto, Codex auth/config, home/cache |
-| `/mnt/user/ai-matrix-bot` | `/app/data/files` | uploads, generated files, and bash workspaces |
-
-4. Start the container and authenticate Codex once from its console:
+Verify readiness at any time:
 
 ```sh
-codex login --device-auth
-codex login status
+docker compose exec -T bot npm run health --silent
 ```
 
-Unraid stores masked environment values in its user-template XML on the flash
-drive. Protect flash backups accordingly. Stop the container and back up both
-appdata and the user-files share at the same recovery point so SQLite/WAL,
-Matrix crypto, files, and bash state remain consistent.
+The base deployment is one container and one persistent `bot-data` volume. All
+SQLite databases, Matrix crypto/sync state, uploaded files, bash workspaces,
+and Codex authentication live below `/app/data`.
+
+### Optional integrations
+
+Add any of these to `.env` when you want the corresponding feature:
+
+```dotenv
+DOCLING_URL=http://192.168.1.10:5001
+OPENROUTER_API_KEY=replace-me
+TAVILY_API_KEY=replace-me
+```
+
+- `DOCLING_URL` enables DOCX conversion and low-text PDF fallback through a
+  separately managed Docling server.
+- `OPENROUTER_API_KEY` enables embeddings and semantic retrieval.
+- `TAVILY_API_KEY` enables web search and page extraction.
+
+Model, timeout, concurrency, and logging overrides are listed as commented
+options in [`.env.example`](./.env.example). Defaults work without copying
+them into `.env`.
+
+## Minimal Unraid deployment
+
+1. Prepare the two writable bind-mount directories for Unraid's container UID:
+
+   ```sh
+   mkdir -p /mnt/user/appdata/ai-matrix-bot /mnt/user/ai-matrix-bot
+   chown 99:100 /mnt/user/appdata/ai-matrix-bot /mnt/user/ai-matrix-bot
+   chmod 0770 /mnt/user/appdata/ai-matrix-bot /mnt/user/ai-matrix-bot
+   ```
+
+2. Install the template:
+
+   ```sh
+   mkdir -p /boot/config/plugins/dockerMan/templates-user
+   wget -O /boot/config/plugins/dockerMan/templates-user/my-ai-matrix-bot.xml \
+     https://raw.githubusercontent.com/karilaa-dev/ai-matrix-bot/main/templates/ai-matrix-bot.xml
+   ```
+
+3. In **Docker → Add Container → ai-matrix-bot**, fill in:
+
+   - Matrix Homeserver URL
+   - Matrix Owner User ID
+   - Matrix Encryption Secret
+   - either Matrix Access Token, or Matrix Login plus Matrix Password
+
+   Keep the default appdata and user-files paths. Docling, OpenRouter, and
+   Tavily fields are optional. A full MXID is recommended for Matrix Login,
+   though its localpart is accepted. After the first successful password-mode
+   start, the login/password fields may be cleared because appdata contains the
+   cached session.
+
+4. Start the container, open its console, and authenticate Codex once:
+
+   ```sh
+   codex login --device-auth
+   codex login status
+   ```
+
+5. Invite the bot account to a new encrypted DM from the owner account and send
+   `!users`.
+
+There is no separate Matrix bootstrap container, credential-output directory,
+secret-file mount, port mapping, or Docling container in this deployment.
+
+## Moving or restoring the bot
+
+Stop the old instance first. Move the common Matrix settings and restore
+`/app/data` (the Compose `bot-data` volume, or the Unraid appdata and user-files
+paths). This preserves the cached token/device in
+`/app/data/matrix/session.json`, so the password is not needed on the new host
+unless that token must be replaced. Without a session backup, supply either an
+access token or login/password again. Start exactly one new instance.
+
+The encryption secret restores the bot's Matrix secret-storage and
+cross-signing identity, but it is **not a complete backup of old Megolm room
+sessions**. If the Matrix crypto directory is not restored, some historical
+encrypted events can remain unreadable even with the correct secret. Back up
+application data and Matrix crypto state together when old history matters.
+
+See [Deployment and recovery](./docs/deployment.md) for backups, upgrades, and
+the optional Postgres profile.
+
+## Matrix behavior
+
+The configured owner is inserted into the durable allowlist. Owner-only
+commands are:
+
+- `!allow @user:server`
+- `!deny @user:server`
+- `!users`
+
+Conversation commands are `!help`, `!lang`, `!timezone`, `!stream`, `!stop`,
+`!fork`, `!compact`, and `!retry`. A command in a Matrix thread affects that
+thread's Codex conversation.
+
+The bot joins invitations only from allowlisted users and requires exactly two
+room participants. It ignores its own events, reactions, peer notices, and
+unsupported message types.
 
 ## Local development
+
+Node.js 24 is required outside Docker:
 
 ```sh
 npm ci
@@ -213,49 +183,26 @@ npm test
 npm run build
 ```
 
-Copy `.env.example` to `.env`, adjust it, and restrict it to the owner. Export
-that file in your shell (`set -a; source .env; set +a`), then use
-`npm run matrix:bootstrap` once and `npm run dev` to start the sync loop.
-The example uses local relative paths; Compose overrides them with container
-paths. `npm run health` checks local readiness without exposing an HTTP endpoint.
+Copy `.env.example` to `.env`, export it in your shell, authenticate Codex in
+the configured `CODEX_HOME`, and run `npm run dev`.
 
-## Matrix behavior
+## Security boundary
 
-The initial owner is read from `MATRIX_OWNER_ID` and persisted in the
-allowlist. Owner-only commands are:
+Matrix E2EE protects data in transit and on the homeserver. The bot must decrypt
+messages to run inference, so messages, extracted text, files, embeddings,
+summaries, and bash state are application plaintext. Use encrypted storage and
+backups. Environment secrets are visible to privileged Docker operators and in
+rendered Docker configuration; never paste `docker compose config` into public
+logs.
 
-- `!allow @user:server` — allow a user.
-- `!deny @user:server` — revoke a user; the owner cannot be revoked.
-- `!users` — list allowed users.
+Read [Security](./docs/security.md) and [Matrix setup](./docs/matrix-setup.md)
+before production use.
 
-Conversation commands are `!help`, `!lang`, `!timezone`, `!stream`, `!stop`,
-`!fork`, `!compact`, and `!retry`. A command issued in a thread affects that
-thread's core conversation. `!fork` creates a sibling Matrix thread so forks
-never become nested threads.
+## Reusing `codex-core`
 
-The bot ignores its own events, reactions, peer notices, and unsupported event
-types. Edits replace queued text only before inference begins; later edits are
-answered with an instruction to send a new message.
-
-## Security and operations
-
-Matrix E2EE protects data in transit and on the homeserver, but this application
-must decrypt content to run inference. Decrypted messages, media, extracted
-text, embeddings, summaries, and bash files are stored as application
-plaintext. Use encrypted disks/volumes, protect backups, and never share the
-Matrix crypto volume between running replicas. Read [Security](./docs/security.md)
-and [Matrix setup](./docs/matrix-setup.md) before production use.
-
-The supported deployment is one bot process per Matrix device store. Horizontal
-replicas, group rooms, appservice mode, multiple identities, and npm-registry
-publication are intentionally out of scope for v0.1.0.
-
-## Reusing the core in `ai-tg-bot`
-
-The Telegram repository remains unchanged. The exact no-data-migration adapter
-and wrapper guide is maintained in
-[`codex-core/docs/ai-tg-bot-migration.md`](https://github.com/karilaa-dev/codex-core/blob/v0.1.0/docs/ai-tg-bot-migration.md)
-and is checked against `ai-tg-bot` revision `7eedd5f`.
+The Telegram repository remains unchanged in this release. Its compiling,
+no-data-migration adoption guide is in
+[`codex-core/docs/ai-tg-bot-migration.md`](https://github.com/karilaa-dev/codex-core/blob/v0.1.0/docs/ai-tg-bot-migration.md).
 
 Additional documentation:
 

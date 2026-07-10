@@ -22,6 +22,7 @@ const execFile = promisify(execFileCallback);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const image = process.env.MATRIX_INTEGRATION_SYNAPSE_IMAGE ?? "matrixdotorg/synapse:v1.153.0";
 const timeoutMs = 45_000;
+const botEncryptionSecret = "matrix-integration-portable-secret-32";
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 const fakeCodexSource = `#!/usr/bin/env node
@@ -182,6 +183,7 @@ function waitForMessage(client, roomId, predicate, timeout = timeoutMs) {
 }
 
 function startBot(homeserverUrl, loginResult, root, options = {}) {
+  const matrixPassword = options.matrixPassword ?? "";
   const child = spawn(process.execPath, [path.join(repository, "dist/index.js")], {
     cwd: repository,
     env: {
@@ -189,8 +191,12 @@ function startBot(homeserverUrl, loginResult, root, options = {}) {
       MATRIX_HOMESERVER_URL: homeserverUrl,
       MATRIX_BOT_USER_ID: loginResult.user_id,
       MATRIX_OWNER_ID: "@owner:localhost",
-      MATRIX_ACCESS_TOKEN: loginResult.access_token,
-      MATRIX_DEVICE_ID: loginResult.device_id,
+      MATRIX_ACCESS_TOKEN: "",
+      MATRIX_ACCESS_TOKEN_FILE: "",
+      MATRIX_LOGIN: matrixPassword ? "bot" : "",
+      MATRIX_PASSWORD: matrixPassword,
+      MATRIX_ENCRYPTION_SECRET: botEncryptionSecret,
+      MATRIX_SESSION_PATH: path.join(root, "bot-session.json"),
       MATRIX_STORAGE_PATH: path.join(root, "bot-sync.json"),
       MATRIX_CRYPTO_PATH: path.join(root, "bot-crypto"),
       MATRIX_DATABASE_PATH: path.join(root, "matrix-adapter.sqlite"),
@@ -273,8 +279,16 @@ async function main() {
     outsider = await sdkClient(homeserverUrl, outsiderLogin, temporary, "outsider", false);
     const ownerMessages = [];
     owner.on("room.message", (roomId, event) => ownerMessages.push({ roomId, event }));
-    bot = startBot(homeserverUrl, botLogin, temporary, { codexPath: fakeCodex });
+    bot = startBot(homeserverUrl, botLogin, temporary, {
+      codexPath: fakeCodex,
+      matrixPassword: "bot-password",
+    });
     await bot.ready;
+    const passwordSession = await readJson(path.join(temporary, "bot-session.json"));
+    assert(passwordSession.userId === botLogin.user_id, "Password login cached the wrong Matrix user");
+    assert(typeof passwordSession.accessToken === "string" && passwordSession.accessToken.length > 0,
+      "Password login did not cache an access token");
+    assert(!Object.hasOwn(passwordSession, "password"), "Password login persisted the Matrix password");
 
     const unencryptedRoom = await owner.createRoom({
       preset: "private_chat", is_direct: true, invite: [botLogin.user_id], name: "Unencrypted integration DM",
@@ -528,7 +542,7 @@ async function main() {
     });
     const ambiguousDeliveryEventId = await sendWithTransaction(
       homeserverUrl,
-      botLogin.access_token,
+      passwordSession.accessToken,
       unencryptedRoom,
       "m.room.message",
       crashTransactionId,
@@ -574,6 +588,7 @@ async function main() {
       synapseImage: image,
       unencryptedDm: true,
       encryptedDm: true,
+      passwordLoginSessionCached: true,
       encryptedRestartDecryption: true,
       encryptedMediaRoundTrip: true,
       inboundReplayDeduplicated: true,

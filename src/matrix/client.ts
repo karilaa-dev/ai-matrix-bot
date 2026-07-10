@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import MatrixBotSdk from "@vector-im/matrix-bot-sdk";
+import { SecretStorageKey } from "@matrix-org/matrix-sdk-crypto-nodejs";
 import type {
   MatrixClient as MatrixClientType,
   RustSdkCryptoStoreType as RustSdkCryptoStoreTypeValue,
@@ -33,6 +34,22 @@ export interface UploadedMedia {
 type SdkClient = MatrixClientType & {
   doRequest<T>(method: string, endpoint: string, query?: Record<string, string> | null, body?: unknown): Promise<T>;
 };
+
+interface CrossSigningQueryResponse {
+  master_keys?: Record<string, unknown>;
+  self_signing_keys?: Record<string, unknown>;
+  user_signing_keys?: Record<string, unknown>;
+}
+
+interface SecretStorageDefaultKey {
+  key?: string;
+}
+
+function isMatrixNotFound(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  return ("errcode" in error && error.errcode === "M_NOT_FOUND")
+    || ("statusCode" in error && error.statusCode === 404);
+}
 
 type DurableSyncEventHandler = (eventType: string, ...payload: unknown[]) => Promise<void> | void;
 
@@ -232,10 +249,7 @@ export class DedicatedMatrixClient {
       }
     });
     this.#client.setSyncSuccessHandler(async () => { await handlers.onSync?.(); });
-    await this.#client.crypto.prepare();
-    if (this.#config.recoveryKey && await this.#client.crypto.isRecoveryAvailable()) {
-      await this.#client.crypto.confirmIdentityWithRecoveryKey(this.#config.recoveryKey);
-    }
+    await this.initializeCryptoIdentity(this.#config.encryptionSecret);
     await handlers.beforeSync?.();
     await this.#client.start();
     this.#syncPromise = this.#client.waitForSyncStop().catch((error) => {
@@ -265,16 +279,98 @@ export class DedicatedMatrixClient {
     await this.#syncPromise?.catch(() => undefined);
   }
 
-  async initializeCryptoIdentity(recoveryKey?: string): Promise<{ created: boolean; recoveryKey?: string }> {
+  async initializeCryptoIdentity(encryptionSecret?: string): Promise<{ created: boolean; recoveryKey?: string }> {
     this.#userId = await this.#client.getUserId();
     await this.#client.crypto.prepare();
     if (await this.#client.crypto.isRecoveryAvailable()) {
-      if (!recoveryKey) throw new Error("Matrix recovery is already configured; provide MATRIX_RECOVERY_KEY(_FILE)");
-      await this.#client.crypto.confirmIdentityWithRecoveryKey(recoveryKey);
+      if (!encryptionSecret) {
+        throw new Error("Matrix recovery is already configured; provide MATRIX_ENCRYPTION_SECRET");
+      }
+      await this.#validateSecretStorageKey(encryptionSecret);
+      await this.#client.crypto.confirmIdentityWithRecoveryKey(encryptionSecret);
       return { created: false };
     }
-    const createdKey = await this.#client.crypto.createIdentity(recoveryKey);
+
+    await this.#assertNoUnrecoverableCrossSigningIdentity();
+
+    if (!encryptionSecret) {
+      const createdKey = await this.#client.crypto.createIdentity();
+      await this.#assertRecoveryInitialized();
+      return { created: true, recoveryKey: createdKey };
+    }
+
+    await this.#ensurePassphraseSecretStorage(encryptionSecret);
+    const createdKey = await this.#client.crypto.createIdentity(encryptionSecret);
+    await this.#assertRecoveryInitialized();
     return { created: true, recoveryKey: createdKey };
+  }
+
+  async #assertRecoveryInitialized(): Promise<void> {
+    if (!await this.#client.crypto.isRecoveryAvailable()) {
+      throw new Error("Matrix encryption identity initialization is incomplete; recovery metadata was not confirmed");
+    }
+  }
+
+  async #assertNoUnrecoverableCrossSigningIdentity(): Promise<void> {
+    const response = await this.#client.doRequest<CrossSigningQueryResponse>(
+      "POST",
+      "/_matrix/client/v3/keys/query",
+      null,
+      { device_keys: { [this.#userId!]: [] } },
+    );
+    const hasPublishedIdentity = Boolean(
+      response.master_keys?.[this.#userId!]
+      || response.self_signing_keys?.[this.#userId!]
+      || response.user_signing_keys?.[this.#userId!]
+    );
+    const storedCrossSigningSecrets = await Promise.all([
+      this.#readAccountData<Record<string, unknown>>("m.cross_signing.master"),
+      this.#readAccountData<Record<string, unknown>>("m.cross_signing.self_signing"),
+      this.#readAccountData<Record<string, unknown>>("m.cross_signing.user_signing"),
+    ]);
+    if (hasPublishedIdentity || storedCrossSigningSecrets.some(Boolean)) {
+      throw new Error(
+        "Matrix cross-signing already exists but recovery is incomplete; restore the existing recovery secret or reset recovery deliberately",
+      );
+    }
+  }
+
+  async #ensurePassphraseSecretStorage(encryptionSecret: string): Promise<void> {
+    const defaultKey = await this.#readAccountData<SecretStorageDefaultKey>("m.secret_storage.default_key");
+
+    if (defaultKey?.key) {
+      await this.#validateSecretStorageKey(encryptionSecret, defaultKey);
+      return;
+    }
+
+    const secretStorageKey = SecretStorageKey.createFromPassphrase(encryptionSecret);
+    await this.#client.setAccountData(
+      secretStorageKey.eventType(),
+      JSON.parse(secretStorageKey.accountDataContent()) as Record<string, unknown>,
+    );
+    await this.#client.setAccountData("m.secret_storage.default_key", { key: secretStorageKey.keyId() });
+  }
+
+  async #validateSecretStorageKey(
+    encryptionSecret: string,
+    knownDefaultKey?: SecretStorageDefaultKey,
+  ): Promise<void> {
+    const defaultKey = knownDefaultKey
+      ?? await this.#readAccountData<SecretStorageDefaultKey>("m.secret_storage.default_key");
+    if (!defaultKey?.key) throw new Error("Matrix secret-storage metadata is incomplete; recovery was not changed");
+    const eventType = `m.secret_storage.key.${defaultKey.key}`;
+    const keyInfo = await this.#readAccountData<Record<string, unknown>>(eventType);
+    if (!keyInfo) throw new Error("Matrix secret-storage metadata is incomplete; recovery was not changed");
+    SecretStorageKey.fromAccountData(encryptionSecret, eventType, JSON.stringify(keyInfo));
+  }
+
+  async #readAccountData<T>(eventType: string): Promise<T | null> {
+    try {
+      return await this.#client.getAccountData<T>(eventType);
+    } catch (error) {
+      if (isMatrixNotFound(error)) return null;
+      throw error;
+    }
   }
 
   async whoAmI(): Promise<{ user_id: string; device_id?: string }> {

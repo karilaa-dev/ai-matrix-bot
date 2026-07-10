@@ -1,108 +1,113 @@
 # Matrix account and room setup
 
-## Dedicated identity
+## Dedicated account
 
-Create a normal Matrix user for the bot on the homeserver you administer. Do
-not grant it server-admin privileges and do not use an application-service or
-server-admin access token. Log in once with a trusted client, record the access
-token, and choose one stable device ID for this deployment.
+Create a normal, non-admin Matrix user for the bot. Do not use the owner's
+account, a server-admin token, or an application-service token.
 
-Set:
+Choose one of two authentication modes.
 
-- `MATRIX_HOMESERVER_URL` to the client API base URL.
-- `MATRIX_BOT_USER_ID` to the dedicated bot's full MXID.
-- `MATRIX_OWNER_ID` to the full MXID that controls the allowlist.
-- `MATRIX_DEVICE_ID` to a stable value; changing it creates a new cryptographic
-  device and requires a deliberate recovery/bootstrap operation.
-- `MATRIX_ACCESS_TOKEN` to the stable device token.
-- `MATRIX_RECOVERY_KEY` to the matching recovery key, quoted when stored in
-  `.env` because it contains spaces.
+### Existing access token
 
-Run `npm run matrix:bootstrap` (or the Docker command in the README). Bootstrap
-validates the token with `/whoami`, rejects an identity mismatch, initializes
-the durable SDK/crypto paths, and records the owner. It never stores an account
-password.
+Log in once through a trusted Matrix client or the standard Matrix login API,
+then store the bot account's token in `MATRIX_ACCESS_TOKEN`. Do not also set
+`MATRIX_LOGIN` or `MATRIX_PASSWORD`.
 
-Direct environment values are the supplied single-container path. The
-application still supports `MATRIX_ACCESS_TOKEN_FILE` and
-`MATRIX_RECOVERY_KEY_FILE` for custom orchestrators, but no second Compose
-deployment mode is maintained.
-
-## One-time password bootstrap
-
-If only the account password is available, leave `MATRIX_ACCESS_TOKEN` and (for
-a new recovery identity) `MATRIX_RECOVERY_KEY` empty, then pass the password on
-stdin. A child process cannot update the parent Compose environment, so write
-the generated credentials into a temporary owner-only handoff directory:
-
-This command is for the named-volume Compose deployment. Unraid must use the
-Unraid-specific command in the README so bootstrap and the final container share
-the same `/mnt/user/appdata/ai-matrix-bot` crypto store.
+You can validate the token before deployment:
 
 ```sh
-mkdir -p .matrix-bootstrap
-chmod 700 .matrix-bootstrap
-# On Linux, make the temporary bind writable by the image's node user:
-sudo chown 1000:1000 .matrix-bootstrap
-
-set -a
-. ./.env
-set +a
-read -rsp 'Matrix bot password: ' MATRIX_BOT_PASSWORD
-printf '\n'
-printf '%s' "$MATRIX_BOT_PASSWORD" | docker compose run --rm --no-deps -T \
-  -v "$PWD/.matrix-bootstrap:/bootstrap-output" \
-  bot npm run matrix:bootstrap -- \
-    --user "$MATRIX_BOT_USER_ID" --password-stdin \
-    --token-out /bootstrap-output/matrix_access_token \
-    --recovery-key-out /bootstrap-output/matrix_recovery_key
-unset MATRIX_BOT_PASSWORD
+export MATRIX_HOMESERVER_URL=https://matrix.example.org
+export MATRIX_ACCESS_TOKEN='replace-me'
+curl --fail --silent --show-error \
+  -H "Authorization: Bearer $MATRIX_ACCESS_TOKEN" \
+  "$MATRIX_HOMESERVER_URL/_matrix/client/v3/account/whoami"
 ```
 
-Copy the two exact values into the masked Unraid fields or into
-`MATRIX_ACCESS_TOKEN` and quoted `MATRIX_RECOVERY_KEY` entries in `.env`, then
-securely remove the temporary handoff directory. The output files are created
-with mode `0600`; do not print them into logs or shell history.
+The response must identify the dedicated bot account.
 
-If account recovery already exists, put its key in `MATRIX_RECOVERY_KEY` before
-login and omit `--recovery-key-out`; bootstrap validates it rather than creating
-a replacement. If the server reports existing recovery but the key is lost,
-reset recovery/cross-signing deliberately from a trusted Matrix client first.
-There is no bot CLI reset flag, and an account password cannot recover old
-Megolm room keys.
+### Login and password
 
-## E2EE trust and recovery
+When no token is available, leave `MATRIX_ACCESS_TOKEN` empty and set:
 
-Verify the new bot device from a trusted existing client and establish account
-recovery/cross-signing before inviting it to important encrypted rooms. Keep the
-recovery key outside the application-data volume. Back up the crypto store even
-when a recovery key exists: recovery metadata does not replace all historical
-room keys held by the device.
+```dotenv
+MATRIX_LOGIN=@ai-bot:example.org
+MATRIX_PASSWORD=replace-me
+```
 
-After a recovery, verify an older encrypted event before accepting new work.
-Never copy one crypto store into two concurrently running bot instances.
+A full MXID is recommended for `MATRIX_LOGIN`; a localpart is also accepted.
+The bot submits the credentials through Matrix `m.login.password`, validates
+the response with `/whoami`, and stores the resulting access token and device
+ID in `/app/data/matrix/session.json` with owner-only permissions. The password
+is read from the environment and is never written into appdata.
 
-## Authorization and room rules
+On restart, the cached session preserves the Matrix device. Back up appdata to
+preserve that session when moving the bot. After one successful start you may
+clear the login and password fields; provide them again only to replace a
+revoked cached token. The password is never copied into appdata.
 
-On first start, the configured owner is inserted into the durable allowlist.
-Only the owner may run `!allow`, `!deny`, and `!users`. Federated MXIDs may be
-allowed explicitly; `m.direct` metadata alone never grants access.
+In either mode, the application learns its bot MXID and device ID from Matrix,
+so `MATRIX_BOT_USER_ID` and `MATRIX_DEVICE_ID` are not deployment settings.
 
-The bot joins an invitation only when the inviter is allowlisted. After joining,
-it requires exactly two participants: the bot and one peer. Inviting or joining
-a third member causes active work to be cancelled and the bot to leave. This
-rule applies to encrypted and unencrypted rooms.
+## Encryption secret
 
-Use native Matrix threads for parallel conversations. The main room timeline is
-one conversation; each thread root maps to another. Threads cannot nest, so a
-fork made from inside a thread is posted as a sibling root in the main timeline.
+Set `MATRIX_ENCRYPTION_SECRET` to one unique passphrase of at least 32
+characters. `openssl rand -hex 32` can generate one. This is the only
+encryption value needed in the normal deployment configuration.
 
-## Homeserver checks
+On startup the bot prepares its local Matrix crypto store and then:
+
+- creates passphrase-backed Matrix secret storage and a cryptographic identity
+  when the account has none; or
+- confirms the existing identity with the configured secret.
+
+If the account already has recovery configured, use its existing recovery key
+or passphrase as `MATRIX_ENCRYPTION_SECRET`. The bot does not reset an existing
+identity when the value is wrong.
+
+Keep the exact secret when moving the bot. It recovers secret-storage and
+cross-signing identity, but it does not by itself restore every old Megolm room
+key. Copy `/app/data/matrix` as part of a full migration when historical
+encrypted events must remain readable.
+
+If that crypto directory cannot be restored, create a genuinely new bot device:
+use login/password mode or issue a new access token. Do not reuse an old device
+token with an empty crypto store.
+
+## First room
+
+1. Start the bot and wait for a healthy sync.
+2. From `MATRIX_OWNER_ID`, create a new one-to-one DM with the bot account.
+3. Enable room encryption before sending private content.
+4. Ensure the room contains exactly the owner and bot.
+5. Send `!users` to confirm that the owner allowlist was initialized.
+
+The owner may then use `!allow @user:server` and `!deny @user:server`.
+Federated MXIDs work when explicitly allowlisted.
+
+The bot joins invitations only from allowlisted users. `m.direct` metadata is
+recorded for client behavior but never grants access. A third joined or invited
+participant causes active work to be cancelled and the bot to leave.
+
+## Threads and recovery checks
+
+The main DM timeline is one Codex conversation. Each native Matrix thread maps
+to a separate conversation. Threads cannot nest; `!fork` creates a sibling
+thread from the main timeline.
+
+After moving or restoring the bot, verify all of the following before normal
+use:
+
+- `!users` returns once;
+- one existing thread still maps to its prior conversation;
+- a newly encrypted message decrypts;
+- an older encrypted message decrypts when the crypto store was restored;
+- replayed Matrix events do not create duplicate replies.
+
+Run only one bot process against a given cached session and crypto store.
+
+## Homeserver requirements
 
 The bot needs normal client API access to `/versions`, `/whoami`, `/sync`, room
-membership/state, typing notifications, media upload/download, and message send.
-The account must be able to send `m.room.message` and relation metadata
-(`m.thread`, `m.replace`, and replies). Ensure reverse-proxy event/body
-limits leave room for the configured `MATRIX_MAX_EVENT_BYTES`.
-
-No inbound port, webhook, or appservice registration is used.
+state and membership, typing notifications, media upload/download, and event
+sending. The homeserver must support Matrix client-server API v1.4 or newer for
+threads.

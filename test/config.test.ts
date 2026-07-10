@@ -6,11 +6,15 @@ import { loadConfig } from "../src/config.js";
 
 const originalEnv = { ...process.env };
 let temporaryDirectories: string[] = [];
+const ENCRYPTION_SECRET = "portable-matrix-encryption-secret-32";
+const SECOND_ENCRYPTION_SECRET = "different-portable-encryption-secret-32";
+const LEGACY_RECOVERY_SECRET = "EsT7 nCLK jKNT 7mWo yjmu LS8z zS7x TFo5";
 
 function requiredEnvironment(): void {
   process.env.MATRIX_HOMESERVER_URL = "https://matrix.example.org///";
   process.env.MATRIX_OWNER_ID = "@owner:example.org";
   process.env.MATRIX_ACCESS_TOKEN = "test-access-token";
+  process.env.MATRIX_ENCRYPTION_SECRET = ENCRYPTION_SECRET;
 }
 
 beforeEach(() => {
@@ -55,6 +59,7 @@ describe("loadConfig", () => {
       homeserverUrl: "https://matrix.example.org",
       ownerId: "@owner:example.org",
       accessToken: "test-access-token",
+      encryptionSecret: ENCRYPTION_SECRET,
       deviceId: "AI_MATRIX_BOT",
       globalConcurrency: 4,
       batchWindowMs: 750,
@@ -77,13 +82,122 @@ describe("loadConfig", () => {
     expect(config.logLevel).toBe("info");
   });
 
+  it("loads a minimal deployment from four portable Matrix values", () => {
+    requiredEnvironment();
+
+    const config = loadConfig();
+
+    expect(config.matrix).toMatchObject({
+      homeserverUrl: "https://matrix.example.org",
+      ownerId: "@owner:example.org",
+      accessToken: "test-access-token",
+      encryptionSecret: ENCRYPTION_SECRET,
+      deviceId: "AI_MATRIX_BOT",
+    });
+    expect(config.matrix.botUserId).toBeUndefined();
+    expect(config.matrix.passwordAuth).toBeUndefined();
+    expect(config.matrix.sessionPath).toBe(resolve("data/matrix/session.json"));
+    expect(config.core.doclingUrl).toBeUndefined();
+    expect(config.core.openRouterApiKey).toBeUndefined();
+    expect(config.core.tavilyApiKey).toBeUndefined();
+  });
+
+  it("accepts Matrix login and password instead of an access token", () => {
+    requiredEnvironment();
+    delete process.env.MATRIX_ACCESS_TOKEN;
+    process.env.MATRIX_LOGIN = "@bot:example.org";
+    process.env.MATRIX_PASSWORD = "  password whitespace is preserved  ";
+
+    const config = loadConfig();
+
+    expect(config.matrix.accessToken).toBe("");
+    expect(config.matrix.passwordAuth).toEqual({
+      login: "@bot:example.org",
+      password: "  password whitespace is preserved  ",
+    });
+  });
+
+  it.each([
+    ["login without password", "@bot:example.org", undefined],
+    ["password without login", undefined, "matrix-password"],
+  ])("rejects partial password authentication: %s", (_label, login, password) => {
+    requiredEnvironment();
+    delete process.env.MATRIX_ACCESS_TOKEN;
+    if (login) process.env.MATRIX_LOGIN = login;
+    if (password) process.env.MATRIX_PASSWORD = password;
+
+    expect(() => loadConfig()).toThrow("Set both MATRIX_LOGIN and MATRIX_PASSWORD, or neither");
+  });
+
+  it("rejects ambiguous token and password authentication", () => {
+    requiredEnvironment();
+    process.env.MATRIX_LOGIN = "@bot:example.org";
+    process.env.MATRIX_PASSWORD = "matrix-password";
+
+    expect(() => loadConfig()).toThrow(
+      "Configure either MATRIX_ACCESS_TOKEN or MATRIX_LOGIN with MATRIX_PASSWORD, not both",
+    );
+  });
+
+  it("allows auth values to be omitted when a cached session will be resolved at startup", () => {
+    const directory = mkdtempSync(join(tmpdir(), "matrix-config-"));
+    temporaryDirectories.push(directory);
+    requiredEnvironment();
+    delete process.env.MATRIX_ACCESS_TOKEN;
+    process.env.MATRIX_SESSION_PATH = join(directory, "session.json");
+
+    const config = loadConfig();
+
+    expect(config.matrix.accessToken).toBe("");
+    expect(config.matrix.passwordAuth).toBeUndefined();
+    expect(config.matrix.sessionPath).toBe(join(directory, "session.json"));
+  });
+
+  it("requires the portable encryption secret for a normal startup", () => {
+    requiredEnvironment();
+    delete process.env.MATRIX_ENCRYPTION_SECRET;
+
+    expect(() => loadConfig()).toThrow("MATRIX_ENCRYPTION_SECRET");
+  });
+
+  it("rejects encryption secrets shorter than 32 characters", () => {
+    requiredEnvironment();
+    process.env.MATRIX_ENCRYPTION_SECRET = "too-short";
+
+    expect(() => loadConfig()).toThrow("MATRIX_ENCRYPTION_SECRET must contain at least 32 characters");
+  });
+
+  it("accepts the legacy recovery key as the portable encryption secret", () => {
+    requiredEnvironment();
+    delete process.env.MATRIX_ENCRYPTION_SECRET;
+    process.env.MATRIX_RECOVERY_KEY = LEGACY_RECOVERY_SECRET;
+
+    expect(loadConfig().matrix.encryptionSecret).toBe(LEGACY_RECOVERY_SECRET);
+  });
+
+  it("rejects conflicting portable and legacy encryption secrets", () => {
+    requiredEnvironment();
+    process.env.MATRIX_RECOVERY_KEY = SECOND_ENCRYPTION_SECRET;
+
+    expect(() => loadConfig()).toThrow(
+      "MATRIX_ENCRYPTION_SECRET conflicts with legacy MATRIX_RECOVERY_KEY(_FILE)",
+    );
+  });
+
+  it("accepts matching portable and legacy encryption secrets during migration", () => {
+    requiredEnvironment();
+    process.env.MATRIX_RECOVERY_KEY = ENCRYPTION_SECRET;
+
+    expect(loadConfig().matrix.encryptionSecret).toBe(ENCRYPTION_SECRET);
+  });
+
   it("reads trimmed Matrix secrets from files without retaining the password", () => {
     const directory = mkdtempSync(join(tmpdir(), "matrix-config-"));
     temporaryDirectories.push(directory);
     const accessTokenPath = join(directory, "access-token");
     const recoveryKeyPath = join(directory, "recovery-key");
     writeFileSync(accessTokenPath, "file-access-token\n");
-    writeFileSync(recoveryKeyPath, "file-recovery-key\n");
+    writeFileSync(recoveryKeyPath, `${LEGACY_RECOVERY_SECRET}\n`);
     process.env.MATRIX_HOMESERVER_URL = "https://matrix.example.org";
     process.env.MATRIX_OWNER_ID = "@owner:example.org";
     process.env.MATRIX_ACCESS_TOKEN_FILE = accessTokenPath;
@@ -92,7 +206,7 @@ describe("loadConfig", () => {
     const config = loadConfig();
 
     expect(config.matrix.accessToken).toBe("file-access-token");
-    expect(config.matrix.recoveryKey).toBe("file-recovery-key");
+    expect(config.matrix.encryptionSecret).toBe(LEGACY_RECOVERY_SECRET);
     expect(JSON.stringify(config)).not.toContain("password");
   });
 
@@ -102,15 +216,17 @@ describe("loadConfig", () => {
     const accessTokenPath = join(directory, "access-token");
     const recoveryKeyPath = join(directory, "recovery-key");
     writeFileSync(accessTokenPath, "stale-file-token");
-    writeFileSync(recoveryKeyPath, "stale-file-recovery-key");
-    requiredEnvironment();
-    process.env.MATRIX_RECOVERY_KEY = "direct-recovery-key";
+    writeFileSync(recoveryKeyPath, SECOND_ENCRYPTION_SECRET);
+    process.env.MATRIX_HOMESERVER_URL = "https://matrix.example.org";
+    process.env.MATRIX_OWNER_ID = "@owner:example.org";
+    process.env.MATRIX_ACCESS_TOKEN = "test-access-token";
+    process.env.MATRIX_RECOVERY_KEY = LEGACY_RECOVERY_SECRET;
     process.env.MATRIX_ACCESS_TOKEN_FILE = accessTokenPath;
     process.env.MATRIX_RECOVERY_KEY_FILE = recoveryKeyPath;
 
     expect(loadConfig().matrix).toMatchObject({
       accessToken: "test-access-token",
-      recoveryKey: "direct-recovery-key",
+      encryptionSecret: LEGACY_RECOVERY_SECRET,
     });
   });
 
@@ -120,7 +236,7 @@ describe("loadConfig", () => {
     const accessTokenPath = join(directory, "access-token");
     const recoveryKeyPath = join(directory, "recovery-key");
     writeFileSync(accessTokenPath, "file-access-token\n");
-    writeFileSync(recoveryKeyPath, "file-recovery-key\n");
+    writeFileSync(recoveryKeyPath, `${LEGACY_RECOVERY_SECRET}\n`);
     process.env.MATRIX_HOMESERVER_URL = "https://matrix.example.org";
     process.env.MATRIX_OWNER_ID = "@owner:example.org";
     process.env.MATRIX_ACCESS_TOKEN = "   ";
@@ -130,7 +246,7 @@ describe("loadConfig", () => {
 
     expect(loadConfig().matrix).toMatchObject({
       accessToken: "file-access-token",
-      recoveryKey: "file-recovery-key",
+      encryptionSecret: LEGACY_RECOVERY_SECRET,
     });
   });
 
@@ -138,13 +254,12 @@ describe("loadConfig", () => {
     const directory = mkdtempSync(join(tmpdir(), "matrix-config-"));
     temporaryDirectories.push(directory);
     requiredEnvironment();
-    process.env.MATRIX_RECOVERY_KEY = "direct-recovery-key";
     process.env.MATRIX_ACCESS_TOKEN_FILE = join(directory, "missing-access-token");
     process.env.MATRIX_RECOVERY_KEY_FILE = join(directory, "missing-recovery-key");
 
     expect(loadConfig().matrix).toMatchObject({
       accessToken: "test-access-token",
-      recoveryKey: "direct-recovery-key",
+      encryptionSecret: ENCRYPTION_SECRET,
     });
   });
 
@@ -155,12 +270,13 @@ describe("loadConfig", () => {
     expect(loadConfig().core.doclingUrl).toBe("https://docling.example.org/api/");
   });
 
-  it("allows bootstrap to load configuration before it has an access token", () => {
+  it("allows configuration loading before auth is resolved from a cached session", () => {
     process.env.MATRIX_HOMESERVER_URL = "https://matrix.example.org";
     process.env.MATRIX_OWNER_ID = "@owner:example.org";
+    process.env.MATRIX_ENCRYPTION_SECRET = ENCRYPTION_SECRET;
 
     expect(loadConfig({ allowMissingAccessToken: true }).matrix.accessToken).toBe("");
-    expect(() => loadConfig()).toThrow("Set MATRIX_ACCESS_TOKEN or MATRIX_ACCESS_TOKEN_FILE");
+    expect(loadConfig().matrix.accessToken).toBe("");
   });
 
   it("allows bootstrap to create configured secret files that do not exist yet", () => {
@@ -173,6 +289,7 @@ describe("loadConfig", () => {
 
     expect(loadConfig({
       allowMissingAccessToken: true,
+      allowMissingEncryptionSecret: true,
       allowMissingSecretFiles: true,
     }).matrix).toMatchObject({ accessToken: "" });
     expect(() => loadConfig()).toThrow(/ENOENT/);

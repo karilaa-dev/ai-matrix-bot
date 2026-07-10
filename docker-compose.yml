@@ -8,27 +8,8 @@ services:
     env_file:
       - path: .env
         required: false
-    environment:
-      NODE_ENV: production
-      MATRIX_HOMESERVER_URL: "${MATRIX_HOMESERVER_URL:-}"
-      MATRIX_BOT_USER_ID: "${MATRIX_BOT_USER_ID:-}"
-      MATRIX_OWNER_ID: "${MATRIX_OWNER_ID:-}"
-      MATRIX_DEVICE_ID: "${MATRIX_DEVICE_ID:-AI_MATRIX_BOT}"
-      MATRIX_ACCESS_TOKEN: "${MATRIX_ACCESS_TOKEN:-}"
-      MATRIX_RECOVERY_KEY: "${MATRIX_RECOVERY_KEY:-}"
-      MATRIX_DATABASE_PATH: /app/data/matrix-bot.sqlite
-      CORE_DATABASE_URL: file:/app/data/codex-core.sqlite
-      FILE_ROOT: /app/data/files
-      BASH_ROOT: /app/data/bash
-      MATRIX_STORAGE_PATH: /app/state/matrix/sync
-      MATRIX_CRYPTO_PATH: /app/state/matrix/crypto
-      CODEX_HOME: /home/node/.codex
-      CODEX_PATH: /usr/local/bin/codex
-      DOCLING_URL: "${DOCLING_URL:-}"
     volumes:
       - bot-data:/app/data
-      - matrix-state:/app/state/matrix
-      - codex-home:/home/node/.codex
     healthcheck:
       test: ["CMD", "npm", "run", "health", "--silent"]
       interval: 30s
@@ -39,5 +20,3 @@ services:
 
 volumes:
   bot-data:
-  matrix-state:
-  codex-home:

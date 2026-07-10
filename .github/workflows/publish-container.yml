@@ -46,11 +46,9 @@ jobs:
       - name: Validate deployment artifacts
         env:
           MATRIX_HOMESERVER_URL: https://matrix.example.org
-          MATRIX_BOT_USER_ID: "@bot:example.org"
           MATRIX_OWNER_ID: "@owner:example.org"
           MATRIX_ACCESS_TOKEN: publish-validation-token
-          MATRIX_RECOVERY_KEY: publish-validation-recovery-key
-          DOCLING_URL: http://docling.example.org:5001
+          MATRIX_ENCRYPTION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
           POSTGRES_PASSWORD: publish-validation-password
         run: |
           npm run test:deployment
@@ -63,7 +61,7 @@ jobs:
         run: |
           docker build -t ai-matrix-bot:publish-validation .
           docker image inspect ai-matrix-bot:publish-validation --format '{{json .Config}}' | \
-            jq -e '(.User == "node") and (.Healthcheck.Test != null) and ([.Env[] | select(startswith("MATRIX_ACCESS_TOKEN_FILE=") or startswith("MATRIX_RECOVERY_KEY_FILE=") or startswith("DOCLING_URL="))] | length == 0)'
+            jq -e '(.User == "node") and (.Healthcheck.Test != null) and ([.Env[] | select(startswith("MATRIX_ACCESS_TOKEN=") or startswith("MATRIX_ACCESS_TOKEN_FILE=") or startswith("MATRIX_PASSWORD=") or startswith("MATRIX_ENCRYPTION_SECRET=") or startswith("MATRIX_ENCRYPTION_SECRET_FILE=") or startswith("MATRIX_RECOVERY_KEY=") or startswith("MATRIX_RECOVERY_KEY_FILE=") or startswith("DOCLING_URL="))] | length == 0)'
           docker run --rm --entrypoint node ai-matrix-bot:publish-validation -e \
             'Promise.all([import("@matrix-org/matrix-sdk-crypto-nodejs"), import("./dist/config.js"), import("./dist/core/environment.js")]).then(() => console.log("runtime-imports-ok"))'
 

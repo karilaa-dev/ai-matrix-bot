@@ -11,6 +11,10 @@ describe("Codex child environment", () => {
       OPENAI_API_KEY: "codex-api-key",
       MATRIX_HOMESERVER_URL: "https://matrix.example.org",
       MATRIX_ACCESS_TOKEN: "matrix-token",
+      MATRIX_LOGIN: "@bot:example.org",
+      MATRIX_PASSWORD: "matrix-password",
+      MATRIX_SESSION_PATH: "/app/data/matrix/session.json",
+      MATRIX_ENCRYPTION_SECRET: "portable-matrix-encryption-secret-32",
       MATRIX_RECOVERY_KEY: "matrix-recovery-key",
       MATRIX_ACCESS_TOKEN_FILE: "/run/secrets/matrix-token",
       OPENROUTER_API_KEY: "embedding-key",
@@ -30,6 +34,10 @@ describe("Codex child environment", () => {
     });
     expect(environment).not.toHaveProperty("MATRIX_HOMESERVER_URL");
     expect(environment).not.toHaveProperty("MATRIX_ACCESS_TOKEN");
+    expect(environment).not.toHaveProperty("MATRIX_LOGIN");
+    expect(environment).not.toHaveProperty("MATRIX_PASSWORD");
+    expect(environment).not.toHaveProperty("MATRIX_SESSION_PATH");
+    expect(environment).not.toHaveProperty("MATRIX_ENCRYPTION_SECRET");
     expect(environment).not.toHaveProperty("MATRIX_RECOVERY_KEY");
     expect(environment).not.toHaveProperty("MATRIX_ACCESS_TOKEN_FILE");
     expect(environment).not.toHaveProperty("OPENROUTER_API_KEY");

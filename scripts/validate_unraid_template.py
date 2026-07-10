@@ -32,14 +32,8 @@ required_targets = {
     "/app/data",
     "/app/data/files",
     "MATRIX_HOMESERVER_URL",
-    "MATRIX_BOT_USER_ID",
     "MATRIX_OWNER_ID",
-    "MATRIX_DEVICE_ID",
-    "MATRIX_ACCESS_TOKEN",
-    "MATRIX_RECOVERY_KEY",
-    "OPENROUTER_API_KEY",
-    "TAVILY_API_KEY",
-    "DOCLING_URL",
+    "MATRIX_ENCRYPTION_SECRET",
 }
 assert required_targets <= configs.keys(), required_targets - configs.keys()
 for target in required_targets:
@@ -47,30 +41,44 @@ for target in required_targets:
 
 masked = {
     "MATRIX_ACCESS_TOKEN",
-    "MATRIX_RECOVERY_KEY",
+    "MATRIX_PASSWORD",
+    "MATRIX_ENCRYPTION_SECRET",
     "OPENROUTER_API_KEY",
     "TAVILY_API_KEY",
 }
 for target in masked:
     assert configs[target].get("Mask") == "true", target
 
+for target in {"MATRIX_ACCESS_TOKEN", "MATRIX_LOGIN", "MATRIX_PASSWORD"}:
+    assert target in configs, target
+    assert configs[target].get("Required") == "false", target
+assert configs["MATRIX_LOGIN"].get("Mask") == "false"
+
 expected_defaults = {
     "/app/data": "/mnt/user/appdata/ai-matrix-bot",
     "/app/data/files": "/mnt/user/ai-matrix-bot",
-    "HOME": "/app/data/home",
-    "MATRIX_DATABASE_PATH": "/app/data/matrix-bot.sqlite",
-    "CORE_DATABASE_URL": "file:/app/data/codex-core.sqlite",
-    "MATRIX_STORAGE_PATH": "/app/data/matrix/sync",
-    "MATRIX_CRYPTO_PATH": "/app/data/matrix/crypto",
-    "CODEX_HOME": "/app/data/codex",
-    "FILE_ROOT": "/app/data/files",
-    "BASH_ROOT": "/app/data/files/bash",
 }
 for target, expected in expected_defaults.items():
     assert configs[target].get("Default") == expected, target
 
-docling_url = configs["DOCLING_URL"].get("Default", "")
-assert docling_url.startswith(("http://", "https://"))
-assert docling_url != "http://docling:5001"
+assert configs["DOCLING_URL"].get("Default", "") == ""
+for target in {"DOCLING_URL", "OPENROUTER_API_KEY", "TAVILY_API_KEY"}:
+    assert configs[target].get("Required") == "false", target
+
+removed_deployment_knobs = {
+    "MATRIX_BOT_USER_ID",
+    "MATRIX_DEVICE_ID",
+    "MATRIX_RECOVERY_KEY",
+    "HOME",
+    "MATRIX_DATABASE_PATH",
+    "MATRIX_SESSION_PATH",
+    "CORE_DATABASE_URL",
+    "MATRIX_STORAGE_PATH",
+    "MATRIX_CRYPTO_PATH",
+    "CODEX_HOME",
+    "FILE_ROOT",
+    "BASH_ROOT",
+}
+assert not (removed_deployment_knobs & configs.keys()), removed_deployment_knobs & configs.keys()
 
 print("Unraid template validation passed")

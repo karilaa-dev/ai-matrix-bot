@@ -1,10 +1,12 @@
 import { loadConfig } from "./config.js";
 import { createLogger } from "./logging.js";
+import { resolveMatrixSession } from "./matrix/auth.js";
 import { MatrixBotRuntime } from "./runtime/bot.js";
 
 async function main(): Promise<void> {
-  const config = loadConfig();
-  const logger = createLogger(config.logLevel);
+  const loadedConfig = loadConfig();
+  const logger = createLogger(loadedConfig.logLevel);
+  const config = await resolveMatrixSession(loadedConfig, logger);
   const runtime = new MatrixBotRuntime(config, logger);
   let stopping = false;
   const shutdown = async (signal: string) => {

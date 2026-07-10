@@ -32,13 +32,15 @@ RUN apt-get update \
 WORKDIR /app
 
 ENV NODE_ENV=production \
+    HOME=/app/data/home \
     MATRIX_DATABASE_PATH=/app/data/matrix-bot.sqlite \
     CORE_DATABASE_URL=file:/app/data/codex-core.sqlite \
     FILE_ROOT=/app/data/files \
-    BASH_ROOT=/app/data/bash \
-    MATRIX_STORAGE_PATH=/app/state/matrix/sync \
-    MATRIX_CRYPTO_PATH=/app/state/matrix/crypto \
-    CODEX_HOME=/home/node/.codex \
+    BASH_ROOT=/app/data/files/bash \
+    MATRIX_SESSION_PATH=/app/data/matrix/session.json \
+    MATRIX_STORAGE_PATH=/app/data/matrix/sync \
+    MATRIX_CRYPTO_PATH=/app/data/matrix/crypto \
+    CODEX_HOME=/app/data/codex \
     CODEX_PATH=/usr/local/bin/codex
 
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
@@ -46,8 +48,8 @@ COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node system_prompt.md ./system_prompt.md
 
-RUN mkdir -p /app/data/files /app/data/bash /app/state/matrix /home/node/.codex \
-    && chown -R node:node /app /home/node/.codex
+RUN mkdir -p /app/data/home /app/data/files/bash /app/data/matrix /app/data/codex \
+    && chown -R node:node /app
 
 USER node
 

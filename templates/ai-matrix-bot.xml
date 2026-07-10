@@ -14,29 +14,20 @@
   <TemplateURL>https://raw.githubusercontent.com/karilaa-dev/ai-matrix-bot/main/templates/ai-matrix-bot.xml</TemplateURL>
   <ReadMe>https://raw.githubusercontent.com/karilaa-dev/ai-matrix-bot/main/README.md</ReadMe>
   <ExtraParams>--user=99:100</ExtraParams>
-  <Requires>A dedicated Matrix bot account and access token, a recovery key, OpenRouter and Tavily API keys, and a reachable Docling server.</Requires>
+  <Requires>A dedicated Matrix bot account, either an access token or login/password, and one long Matrix encryption secret. Docling, OpenRouter, and Tavily are optional.</Requires>
 
   <Config Name="Appdata" Target="/app/data" Default="/mnt/user/appdata/ai-matrix-bot" Mode="rw" Description="Persistent Matrix sync and crypto state, SQLite databases, Codex authentication/configuration, home directory, and cache state." Type="Path" Display="always" Required="true" Mask="false"/>
   <Config Name="User Files" Target="/app/data/files" Default="/mnt/user/ai-matrix-bot" Mode="rw" Description="Persistent Matrix uploads, generated files, and per-conversation shell workspaces." Type="Path" Display="always" Required="true" Mask="false"/>
 
   <Config Name="Matrix Homeserver URL" Target="MATRIX_HOMESERVER_URL" Default="https://matrix.example.org" Description="Matrix client API base URL." Type="Variable" Display="always" Required="true" Mask="false"/>
-  <Config Name="Matrix Bot User ID" Target="MATRIX_BOT_USER_ID" Default="@ai-bot:example.org" Description="Full MXID of the dedicated non-admin bot account." Type="Variable" Display="always" Required="true" Mask="false"/>
   <Config Name="Matrix Owner User ID" Target="MATRIX_OWNER_ID" Default="@owner:example.org" Description="Full MXID that owns and administers the allowlist." Type="Variable" Display="always" Required="true" Mask="false"/>
-  <Config Name="Matrix Device ID" Target="MATRIX_DEVICE_ID" Default="AI_MATRIX_BOT" Description="Stable device ID associated with the access token and crypto store. Do not change it casually." Type="Variable" Display="always" Required="true" Mask="false"/>
-  <Config Name="Matrix Access Token" Target="MATRIX_ACCESS_TOKEN" Default="" Description="Stable access token for the bot device." Type="Variable" Display="always" Required="true" Mask="true"/>
-  <Config Name="Matrix Recovery Key" Target="MATRIX_RECOVERY_KEY" Default="" Description="Recovery key used to confirm the bot cryptographic identity. Preserve spaces exactly." Type="Variable" Display="always" Required="true" Mask="true"/>
-  <Config Name="OpenRouter API Key" Target="OPENROUTER_API_KEY" Default="" Description="OpenRouter API key used for embeddings and retrieval vectors." Type="Variable" Display="always" Required="true" Mask="true"/>
-  <Config Name="Tavily API Key" Target="TAVILY_API_KEY" Default="" Description="Tavily API key used by web search and page extraction tools." Type="Variable" Display="always" Required="true" Mask="true"/>
-  <Config Name="Docling URL" Target="DOCLING_URL" Default="http://192.168.1.206:5001" Description="Base URL of the separately managed Docling server. Use a reachable LAN endpoint or a container name on a shared custom network." Type="Variable" Display="always" Required="true" Mask="false"/>
-
-  <Config Name="Home Directory" Target="HOME" Default="/app/data/home" Description="Persistent home directory inside appdata." Type="Variable" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="Matrix Adapter Database" Target="MATRIX_DATABASE_PATH" Default="/app/data/matrix-bot.sqlite" Description="SQLite database for allowlisting, Matrix mappings, inbox, and delivery state." Type="Variable" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="Core Database URL" Target="CORE_DATABASE_URL" Default="file:/app/data/codex-core.sqlite" Description="SQLite database URL for Codex conversations, memory, files, and embeddings." Type="Variable" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="Matrix Sync State" Target="MATRIX_STORAGE_PATH" Default="/app/data/matrix/sync" Description="Persistent Matrix sync state path." Type="Variable" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="Matrix Crypto State" Target="MATRIX_CRYPTO_PATH" Default="/app/data/matrix/crypto" Description="Persistent Matrix E2EE device and room-key store. Never share it between running containers." Type="Variable" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="Codex Home" Target="CODEX_HOME" Default="/app/data/codex" Description="Persistent Codex authentication and configuration directory." Type="Variable" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="File Root" Target="FILE_ROOT" Default="/app/data/files" Description="Persistent incoming and generated file storage." Type="Variable" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="Bash Workspace Root" Target="BASH_ROOT" Default="/app/data/files/bash" Description="Persistent per-conversation virtual shell workspaces." Type="Variable" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Matrix Access Token" Target="MATRIX_ACCESS_TOKEN" Default="" Description="Authentication option 1: access token for the dedicated bot account. Leave blank when using login/password." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Matrix Login" Target="MATRIX_LOGIN" Default="" Description="Authentication option 2: bot MXID (recommended) or localpart. Use together with Matrix Password." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Matrix Password" Target="MATRIX_PASSWORD" Default="" Description="Password used only to obtain a device access token. It is not written into appdata. Leave blank when using an access token." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Matrix Encryption Secret" Target="MATRIX_ENCRYPTION_SECRET" Default="" Description="Passphrase of at least 32 characters used for Matrix secret storage and identity recovery. Reuse it exactly after moving the bot." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Docling URL" Target="DOCLING_URL" Default="" Description="Optional external Docling server for DOCX and low-text PDF extraction, for example http://192.168.1.10:5001." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="OpenRouter API Key" Target="OPENROUTER_API_KEY" Default="" Description="Optional key for embeddings and retrieval vectors." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Tavily API Key" Target="TAVILY_API_KEY" Default="" Description="Optional key for web search and page extraction." Type="Variable" Display="always" Required="false" Mask="true"/>
 
   <Config Name="Global Concurrency" Target="MATRIX_GLOBAL_CONCURRENCY" Default="4" Description="Maximum number of conversations running concurrently." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Batch Window" Target="MATRIX_BATCH_WINDOW_MS" Default="750" Description="Milliseconds used to durably batch adjacent text and media." Type="Variable" Display="advanced" Required="false" Mask="false"/>

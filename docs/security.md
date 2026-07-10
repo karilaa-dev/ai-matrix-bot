@@ -23,28 +23,37 @@ end-to-end encrypted through the model/provider boundary.
 
 ## Secrets
 
-- The default single-container deployment stores the Matrix access token and
-  recovery key as direct values in owner-only `.env` or masked Unraid template
-  fields. This matches `ai-tg-bot`'s simple deployment, but privileged Docker
-  operators can see environment values with container inspection and
-  `docker compose config` can render them. Never paste those outputs into logs
-  or support requests.
-- Never commit `secrets/`, `.env`, a crypto store, or a SQLite database. The
-  application still accepts file-backed Matrix credentials for custom
-  orchestrators, but the supplied deployment intentionally favors one simple
-  config surface.
-- Do not store the Matrix password. Revoke the access token if it appears in
-  logs or shell history.
-- Keep Codex credentials in the dedicated `codex-home` volume and never mount a
-  developer's host-wide Codex home into the container.
+- The single-container deployment stores `MATRIX_ENCRYPTION_SECRET` and either
+  `MATRIX_ACCESS_TOKEN` or `MATRIX_PASSWORD` as direct values in an owner-only
+  `.env` or masked Unraid fields. This matches `ai-tg-bot`'s simple
+  configuration model, but privileged Docker operators can see environment
+  values with container inspection and `docker compose config` can render
+  them. Never paste either output into logs or support requests.
+- Never commit `.env`, `/app/data`, a crypto store, or a SQLite database. The
+  supplied deployment intentionally has one simple configuration surface and
+  one application-data root.
+- In login mode, the password remains in deployment configuration but is never
+  written to `/app/data`. The generated access token and device ID are cached
+  owner-only in `/app/data/matrix/session.json`. Protect both the configuration
+  and appdata backup. The password fields may be cleared after the initial
+  session is cached. Revoke exposed tokens and change an exposed password.
+- Keep Codex credentials in `/app/data/codex` and never mount a developer's
+  host-wide Codex home into the container.
 - Tavily and embedding-provider keys are independent secrets with no Matrix
   privileges.
 - The bot removes Matrix, provider, Docling, and database credentials from the
   direct environment passed to `codex app-server`. This prevents ordinary child
   environment inheritance, but it is defense in depth: processes sharing a UID
   are not a hard isolation boundary on every Linux host.
-- Logs must redact access tokens, recovery keys, authorization headers, media
-  decryption keys, provider keys, and database credentials.
+- Logs must redact access tokens, encryption and recovery secrets,
+  authorization headers, media decryption keys, provider keys, and database
+  credentials.
+
+`MATRIX_ENCRYPTION_SECRET` protects and recovers the account's Matrix secret
+storage and cross-signing identity. It is not a static replacement for the
+crypto store: Megolm room sessions change as encrypted conversations continue.
+Back up `/app/data/matrix` when historical decryption matters. Treat the secret
+and crypto backup as complementary recovery material.
 
 ## Dependency audit boundary
 
@@ -70,9 +79,11 @@ controls, and never run the bot container as root.
 ## Incident response
 
 1. Stop the bot without deleting volumes.
-2. Revoke the Matrix access token and affected provider credentials.
+2. Revoke the Matrix access token, change the password when login-mode
+   credentials were exposed, and rotate affected provider credentials.
 3. Preserve redacted logs and delivery/event IDs for replay analysis.
 4. Decide whether the crypto store and plaintext application data were exposed;
    rotate the Matrix device if necessary.
-5. Bootstrap and verify a replacement device, then restore only known-good
-   state. Ensure the old process/device cannot sync before resuming.
+5. Issue and verify a replacement device token, recover it with the configured
+   encryption secret, and restore only known-good state. Ensure the old
+   process/device cannot sync before resuming.

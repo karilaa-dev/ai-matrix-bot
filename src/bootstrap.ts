@@ -43,11 +43,16 @@ function requireOwnerOnlyFile(path: string | undefined, label: string): void {
 }
 
 async function main(): Promise<void> {
-  const config = loadConfig({ allowMissingAccessToken: true, allowMissingSecretFiles: true });
+  const config = loadConfig({
+    allowMissingAccessToken: true,
+    allowMissingEncryptionSecret: true,
+    allowMissingSecretFiles: true,
+  });
   const logger = createLogger(config.logLevel);
   let token = config.matrix.accessToken;
   let login: LoginResponse | undefined;
   requireOwnerOnlyFile(process.env.MATRIX_ACCESS_TOKEN_FILE, "Matrix access-token file");
+  requireOwnerOnlyFile(process.env.MATRIX_ENCRYPTION_SECRET_FILE, "Matrix encryption-secret file");
   requireOwnerOnlyFile(process.env.MATRIX_RECOVERY_KEY_FILE, "Matrix recovery-key file");
 
   const tokenPath = argument("--token-out") ?? process.env.MATRIX_ACCESS_TOKEN_FILE;
@@ -79,12 +84,12 @@ async function main(): Promise<void> {
     headers: { authorization: `Bearer ${token}` },
   });
   if (whoami.user_id === config.matrix.ownerId) {
-    logger.warn("The bot account is the owner account; a separate non-admin Matrix account is recommended", { userId: whoami.user_id });
+    throw new Error("The Matrix bot account must be different from MATRIX_OWNER_ID");
   }
   if (config.matrix.botUserId && whoami.user_id !== config.matrix.botUserId) {
     throw new Error(`Access token belongs to ${whoami.user_id}; expected MATRIX_BOT_USER_ID=${config.matrix.botUserId}`);
   }
-  if (whoami.device_id && whoami.device_id !== config.matrix.deviceId) {
+  if (process.env.MATRIX_DEVICE_ID?.trim() && whoami.device_id && whoami.device_id !== config.matrix.deviceId) {
     throw new Error(`Access token belongs to device ${whoami.device_id}; set MATRIX_DEVICE_ID to that stable device ID`);
   }
 
@@ -99,17 +104,18 @@ async function main(): Promise<void> {
   chmodSync(dirname(config.matrix.storagePath), 0o700);
 
   const recoveryPath = argument("--recovery-key-out") ?? process.env.MATRIX_RECOVERY_KEY_FILE;
-  if (!config.matrix.recoveryKey && !recoveryPath) {
+  if (!config.matrix.encryptionSecret && !recoveryPath) {
     throw new Error(
-      "Set MATRIX_RECOVERY_KEY, MATRIX_RECOVERY_KEY_FILE, or pass --recovery-key-out before initializing Matrix recovery",
+      "Set MATRIX_ENCRYPTION_SECRET, legacy MATRIX_RECOVERY_KEY(_FILE), or pass --recovery-key-out before initializing Matrix recovery",
     );
   }
-  if (!config.matrix.recoveryKey && recoveryPath) {
+  if (!config.matrix.encryptionSecret && recoveryPath) {
     requireWritableSecretOutput(recoveryPath, "Matrix recovery key", "--recovery-key-out");
   }
-  const bootstrapClient = new DedicatedMatrixClient({ ...config.matrix, accessToken: token }, logger);
-  const identity = await bootstrapClient.initializeCryptoIdentity(config.matrix.recoveryKey);
-  if (identity.created && identity.recoveryKey && !config.matrix.recoveryKey) {
+  const { passwordAuth: _discardedPasswordAuth, ...matrixConfig } = config.matrix;
+  const bootstrapClient = new DedicatedMatrixClient({ ...matrixConfig, accessToken: token }, logger);
+  const identity = await bootstrapClient.initializeCryptoIdentity(config.matrix.encryptionSecret || undefined);
+  if (identity.created && identity.recoveryKey && !config.matrix.encryptionSecret) {
     if (!recoveryPath) throw new Error("Recovery output path unexpectedly missing");
     mkdirSync(dirname(recoveryPath), { recursive: true, mode: 0o700 });
     writeFileSync(recoveryPath, `${identity.recoveryKey}\n`, { mode: 0o600 });

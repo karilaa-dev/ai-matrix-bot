@@ -31,16 +31,20 @@ Neither package imports the other package's platform types.
 
 - Matrix adapter DB: allowlist/preferences, room/conversation links, inbound
   events, sync state, outbound jobs, and delivery receipts.
-- Matrix state volume: stable device and E2EE crypto material. It is single
-  writer state and must be restored with the adapter DB.
+- Matrix state under `/app/data/matrix`: cached access token/device, sync
+  cursor, and E2EE crypto material. It is single-writer state and must be
+  restored with the adapter DB.
 - Core DB: conversations, messages, files, chunks, summaries, embeddings, and
   search indexes in `codex_*` tables.
 - Application data: decrypted uploads, generated artifacts, and per-conversation
   bash workspaces.
-- Codex home: Docker-owned Codex login and configuration.
+- Codex home: Docker-owned Codex login and configuration below `/app/data`.
 
 SQLite is the self-contained default. The Postgres override moves the core DB
 to Postgres while retaining local adapter state next to the Matrix crypto store.
+The base Compose deployment mounts one `/app/data` volume. Matrix
+authentication accepts either an existing access token or login/password; the
+latter is exchanged once for an owner-only cached device session.
 
 ## Stable interfaces
 

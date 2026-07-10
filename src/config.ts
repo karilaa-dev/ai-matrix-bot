@@ -3,14 +3,20 @@ import { resolve } from "node:path";
 
 export type LogLevelName = "debug" | "info" | "warn" | "error";
 
+export interface MatrixPasswordAuth {
+  login: string;
+  password: string;
+}
+
 export interface AppConfig {
   matrix: {
     homeserverUrl: string;
     botUserId?: string;
     ownerId: string;
     accessToken: string;
-    recoveryKey?: string;
+    encryptionSecret: string;
     deviceId: string;
+    sessionPath: string;
     storagePath: string;
     cryptoPath: string;
     databasePath: string;
@@ -49,9 +55,20 @@ export interface AppConfig {
   logLevel: LogLevelName;
 }
 
+export type LoadedAppConfig = Omit<AppConfig, "matrix"> & {
+  matrix: AppConfig["matrix"] & {
+    passwordAuth?: MatrixPasswordAuth;
+  };
+};
+
 function optional(name: string): string | undefined {
   const value = process.env[name]?.trim();
   return value ? value : undefined;
+}
+
+function untrimmedOptional(name: string): string | undefined {
+  const value = process.env[name];
+  return value && value.length > 0 ? value : undefined;
 }
 
 function required(name: string): string {
@@ -103,29 +120,63 @@ function ratio(name: string, fallback: number): number {
   return value;
 }
 
-export function loadConfig(options: { allowMissingAccessToken?: boolean; allowMissingSecretFiles?: boolean } = {}): AppConfig {
-  const accessToken = secret("MATRIX_ACCESS_TOKEN", "MATRIX_ACCESS_TOKEN_FILE", options.allowMissingSecretFiles);
-  if (!accessToken && !options.allowMissingAccessToken) {
-    throw new Error("Set MATRIX_ACCESS_TOKEN or MATRIX_ACCESS_TOKEN_FILE");
+export function loadConfig(options: {
+  allowMissingAccessToken?: boolean;
+  allowMissingEncryptionSecret?: boolean;
+  allowMissingSecretFiles?: boolean;
+} = {}): LoadedAppConfig {
+  const login = optional("MATRIX_LOGIN");
+  const password = untrimmedOptional("MATRIX_PASSWORD");
+  if (Boolean(login) !== Boolean(password)) {
+    throw new Error("Set both MATRIX_LOGIN and MATRIX_PASSWORD, or neither");
+  }
+  const accessToken = secret(
+    "MATRIX_ACCESS_TOKEN",
+    "MATRIX_ACCESS_TOKEN_FILE",
+    options.allowMissingSecretFiles || Boolean(login && password),
+  );
+  if (accessToken && login && password) {
+    throw new Error("Configure either MATRIX_ACCESS_TOKEN or MATRIX_LOGIN with MATRIX_PASSWORD, not both");
   }
 
-  const recoveryKey = secret("MATRIX_RECOVERY_KEY", "MATRIX_RECOVERY_KEY_FILE", options.allowMissingSecretFiles);
+  const configuredEncryptionSecret = secret(
+    "MATRIX_ENCRYPTION_SECRET",
+    "MATRIX_ENCRYPTION_SECRET_FILE",
+    options.allowMissingSecretFiles,
+  );
+  const legacyRecoveryKey = secret(
+    "MATRIX_RECOVERY_KEY",
+    "MATRIX_RECOVERY_KEY_FILE",
+    options.allowMissingSecretFiles || Boolean(configuredEncryptionSecret),
+  );
+  if (configuredEncryptionSecret && legacyRecoveryKey && configuredEncryptionSecret !== legacyRecoveryKey) {
+    throw new Error("MATRIX_ENCRYPTION_SECRET conflicts with legacy MATRIX_RECOVERY_KEY(_FILE)");
+  }
+  const encryptionSecret = configuredEncryptionSecret ?? legacyRecoveryKey;
+  if (encryptionSecret && encryptionSecret.length < 32) {
+    throw new Error("MATRIX_ENCRYPTION_SECRET must contain at least 32 characters");
+  }
+  if (!encryptionSecret && !options.allowMissingEncryptionSecret) {
+    throw new Error("Set MATRIX_ENCRYPTION_SECRET (or legacy MATRIX_RECOVERY_KEY(_FILE))");
+  }
   const appDatabaseUrl = optional("APP_DATABASE_URL");
   const appDatabasePath = appDatabaseUrl?.startsWith("file:") ? appDatabaseUrl.slice("file:".length) : appDatabaseUrl;
-  const config: AppConfig = {
+  const config: LoadedAppConfig = {
     matrix: {
       homeserverUrl: required("MATRIX_HOMESERVER_URL").replace(/\/+$/, ""),
       ...(optional("MATRIX_BOT_USER_ID") ? { botUserId: required("MATRIX_BOT_USER_ID") } : {}),
       ownerId: required("MATRIX_OWNER_ID"),
       accessToken: accessToken ?? "",
+      encryptionSecret: encryptionSecret ?? "",
       deviceId: optional("MATRIX_DEVICE_ID") ?? "AI_MATRIX_BOT",
+      sessionPath: resolve(optional("MATRIX_SESSION_PATH") ?? "data/matrix/session.json"),
       storagePath: resolve(optional("MATRIX_STORAGE_PATH") ?? "data/matrix/sync.json"),
       cryptoPath: resolve(optional("MATRIX_CRYPTO_PATH") ?? "data/matrix/crypto"),
       databasePath: resolve(optional("MATRIX_DATABASE_PATH") ?? appDatabasePath ?? "data/matrix-bot.sqlite"),
       globalConcurrency: integer("MATRIX_GLOBAL_CONCURRENCY", 4, 1, 32),
       batchWindowMs: integer("MATRIX_BATCH_WINDOW_MS", 750, 0, 30_000),
       maxEventBytes: integer("MATRIX_MAX_EVENT_BYTES", 60_000, 4_096, 1_000_000),
-      ...(recoveryKey ? { recoveryKey } : {}),
+      ...(login && password ? { passwordAuth: { login, password } } : {}),
     },
     core: {
       databaseUrl: optional("CORE_DATABASE_URL") ?? "file:data/codex-core.sqlite",
